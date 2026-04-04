@@ -41,6 +41,12 @@ build/Release
 node_modules/
 jspm_packages/
 
+# Local scaffold temp folder
+klein-temp/
+
+# Claude Code local config
+.claude/
+
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
 
@@ -69,6 +75,8 @@ web_modules/
 .env
 .env.*
 !.env.example
+!.env.local.example
+.env.local
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
