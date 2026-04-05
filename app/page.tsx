@@ -22,12 +22,11 @@ const features = [
   },
 ];
 
-// TODO: Replace with actual logo images
-const trustedNames = [
-  "Delta Air Lines",
-  "Boeing",
-  "Alaska Airlines",
-  "MRO Shops Nationwide",
+const industryCategories = [
+  "Commercial Airlines",
+  "Aircraft Manufacturers",
+  "MRO Facilities",
+  "Corporate Aviation",
 ];
 
 export default function Home() {
@@ -108,14 +107,13 @@ export default function Home() {
             Trusted by Aviation Professionals
           </p>
 
-          {/* TODO: Replace with actual logo images */}
           <div className="mt-8 flex flex-wrap items-center justify-center gap-x-10 gap-y-4">
-            {trustedNames.map((name, i) => (
+            {industryCategories.map((name, i) => (
               <span key={name} className="flex items-center gap-10">
                 <span className="text-lg font-semibold tracking-wide text-navy/60">
                   {name}
                 </span>
-                {i < trustedNames.length - 1 && (
+                {i < industryCategories.length - 1 && (
                   <span className="hidden text-navy/20 sm:inline" aria-hidden>
                     |
                   </span>
