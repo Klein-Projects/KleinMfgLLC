@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { Wrench, Hammer, Flag } from "lucide-react";
 import Button from "@/components/ui/Button";
 
@@ -33,19 +34,36 @@ export default function Home() {
   return (
     <>
       {/* ── SECTION 1 — HERO ── */}
-      <section className="bg-[#1C2E4A]">
-        <div className="mx-auto grid max-w-7xl items-center gap-10 px-4 py-20 sm:px-6 md:grid-cols-2 lg:px-8 lg:py-28">
-          {/* Left copy */}
-          <div>
+      <section className="bg-[#1C2E4A] overflow-hidden">
+        <div className="mx-auto grid max-w-7xl items-center gap-8 px-4 py-20 sm:px-6 lg:grid-cols-[1fr_2fr_1fr] lg:gap-12 lg:px-8 lg:py-28">
+          {/* Left — 6" scraper */}
+          <div className="hidden lg:block">
+            <div className="relative aspect-[3/5] w-full">
+              <Image
+                src="/MDP_8838-p.jpg"
+                alt="Klein 6-inch phenolic aviation scraper"
+                fill
+                className="rounded-lg object-contain drop-shadow-2xl"
+                sizes="25vw"
+                priority
+              />
+            </div>
+            <p className="mt-3 text-center text-sm font-medium text-steel">
+              6&quot; Scraper
+            </p>
+          </div>
+
+          {/* Center copy */}
+          <div className="text-center lg:text-left">
             <h1 className="text-4xl font-bold leading-tight tracking-tight text-white sm:text-5xl">
               Aircraft Scrapers Built&nbsp;for&nbsp;the Flight&nbsp;Line
             </h1>
-            <p className="mt-6 max-w-lg text-lg leading-relaxed text-steel">
+            <p className="mx-auto mt-6 max-w-lg text-lg leading-relaxed text-steel lg:mx-0">
               Handcrafted phenolic scrapers — safer than metal, more rigid than
               plastic. Trusted by aviation maintenance professionals.
             </p>
 
-            <div className="mt-8 flex flex-wrap items-center gap-4">
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-4 lg:justify-start">
               <Button href="/request-samples" size="lg">
                 Request Free Samples &rarr;
               </Button>
@@ -65,11 +83,21 @@ export default function Home() {
             </p>
           </div>
 
-          {/* Right — placeholder image (desktop only) */}
-          <div className="hidden md:flex">
-            <div className="flex aspect-[4/3] w-full items-center justify-center rounded-lg bg-white/10 text-sm text-steel">
-              Product Photo — add image to /public/scraper.jpg
+          {/* Right — 11" scraper */}
+          <div className="hidden lg:block">
+            <div className="relative aspect-[3/5] w-full">
+              <Image
+                src="/MDP_8837-p.jpg"
+                alt="Klein 11-inch phenolic aviation scraper"
+                fill
+                className="rounded-lg object-contain drop-shadow-2xl"
+                sizes="25vw"
+                priority
+              />
             </div>
+            <p className="mt-3 text-center text-sm font-medium text-steel">
+              11&quot; Long-Reach Scraper
+            </p>
           </div>
         </div>
       </section>
