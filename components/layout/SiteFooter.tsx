@@ -59,13 +59,12 @@ export default function SiteFooter() {
             </h3>
             <a
               href="mailto:sales@kleinmfgllc.com"
-              className="text-sm text-steel transition-colors hover:text-white"
+              className="block text-sm text-steel transition-colors hover:text-white"
             >
               sales@kleinmfgllc.com
             </a>
-            <div className="mt-4 inline-flex items-center gap-2 rounded-md bg-white/10 px-3 py-2 text-sm text-white">
-              <span>Handcrafted in the USA</span>
-              <span aria-label="American flag">&#127482;&#127480;</span>
+            <div className="mt-4 inline-flex items-center rounded-md bg-white/10 px-3 py-2 text-sm text-white">
+              Handcrafted in the USA
             </div>
           </div>
         </div>
