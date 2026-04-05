@@ -18,15 +18,16 @@ const features = [
     icon: Flag,
     title: "Made in the USA",
     description:
-      "Built in America, shipped directly to your hangar. No overseas delays. No quality surprises.",
+      "Built in America. Shipped directly to your hangar. No overseas delays. No quality surprises.",
   },
 ];
 
-const badges = [
-  "Major U.S. Airlines",
-  "MRO Facilities",
-  "Regional Carriers",
-  "Aircraft Manufacturers",
+// TODO: Replace with actual logo images
+const trustedNames = [
+  "Delta Air Lines",
+  "Boeing",
+  "Alaska Airlines",
+  "MRO Shops Nationwide",
 ];
 
 export default function Home() {
@@ -59,15 +60,15 @@ export default function Home() {
               </Button>
             </div>
 
-            <p className="mt-6 text-sm text-steel">
+            <p className="mt-6 text-sm text-white/60">
               Made in the USA{" "}
               <span aria-label="American flag">&#127482;&#127480;</span>
             </p>
           </div>
 
-          {/* Right — placeholder image */}
-          <div className="hidden items-center justify-center md:flex">
-            <div className="flex h-72 w-full items-center justify-center rounded-lg bg-white/10 text-sm text-steel lg:h-80">
+          {/* Right — placeholder image (desktop only) */}
+          <div className="hidden md:flex">
+            <div className="flex aspect-[4/3] w-full items-center justify-center rounded-lg bg-white/10 text-sm text-steel">
               Product Photo — add image to /public/scraper.jpg
             </div>
           </div>
@@ -104,16 +105,21 @@ export default function Home() {
       <section className="bg-offwhite">
         <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
           <p className="text-center text-sm font-medium uppercase tracking-wider text-steel">
-            Trusted by Aviation Professionals Across the USA
+            Trusted by Aviation Professionals
           </p>
 
-          <div className="mt-8 flex flex-wrap justify-center gap-4">
-            {badges.map((badge) => (
-              <span
-                key={badge}
-                className="rounded-full border border-navy px-5 py-2 text-sm font-medium text-navy"
-              >
-                {badge}
+          {/* TODO: Replace with actual logo images */}
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-x-10 gap-y-4">
+            {trustedNames.map((name, i) => (
+              <span key={name} className="flex items-center gap-10">
+                <span className="text-lg font-semibold tracking-wide text-navy/60">
+                  {name}
+                </span>
+                {i < trustedNames.length - 1 && (
+                  <span className="hidden text-navy/20 sm:inline" aria-hidden>
+                    |
+                  </span>
+                )}
               </span>
             ))}
           </div>
