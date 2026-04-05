@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 const products = [
   {
     name: '6" Phenolic Aviation Scraper',
-    image: "/MDP_8838-p.jpg",
+    image: "/MDP_8838-p.png",
     alt: "Klein 6-inch phenolic aviation scraper",
     description:
       "Compact scraper ideal for tight spaces, cockpit components, detail work, and around avionics. The go-to tool for precision sealant work.",
@@ -22,7 +22,7 @@ const products = [
   },
   {
     name: '11" Phenolic Aviation Scraper (Long-Reach)',
-    image: "/MDP_8837-p.jpg",
+    image: "/MDP_8837-p.png",
     alt: "Klein 11-inch phenolic aviation scraper",
     description:
       "Extra-length scraper for larger panels, wing surfaces, and fuselage work. The leverage advantage makes it the preferred choice for heavy maintenance checks.",

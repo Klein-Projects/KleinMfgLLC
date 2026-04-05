@@ -40,7 +40,7 @@ export default function Home() {
           <div className="hidden lg:block">
             <div className="relative aspect-[3/5] w-full">
               <Image
-                src="/MDP_8838-p.jpg"
+                src="/MDP_8856-p.png"
                 alt="Klein 6-inch phenolic aviation scraper"
                 fill
                 className="rounded-lg object-contain drop-shadow-2xl"
@@ -87,7 +87,7 @@ export default function Home() {
           <div className="hidden lg:block">
             <div className="relative aspect-[3/5] w-full">
               <Image
-                src="/MDP_8837-p.jpg"
+                src="/MDP_8855-p.png"
                 alt="Klein 11-inch phenolic aviation scraper"
                 fill
                 className="rounded-lg object-contain drop-shadow-2xl"
