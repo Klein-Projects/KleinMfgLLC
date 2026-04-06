@@ -56,10 +56,10 @@ export default function AboutPage() {
 
             <div className="mt-8 space-y-5 text-base leading-relaxed text-charcoal/80">
               <p>
-                Klein Manufacturing has roots in aviation tooling going back
-                decades. This isn&apos;t a side project — it&apos;s a
-                continuation of work that&apos;s been trusted by airlines and
-                manufacturers since the 1990s.
+                Klein Manufacturing has roots in aviation tooling going back to
+                the 1990s. Our phenolic scrapers have been trusted by airlines
+                and aircraft manufacturers for decades — and every unit we ship
+                today is held to that same standard.
               </p>
               <p>
                 Our scrapers are purpose-built for aircraft maintenance —
@@ -67,12 +67,6 @@ export default function AboutPage() {
                 composites, and painted surfaces. They&apos;re not repurposed
                 industrial tools or generic plastic scrapers with an aviation
                 label slapped on the packaging.
-              </p>
-              <p>
-                We work directly with maintenance teams to make sure the product
-                performs where it matters: on the flight line, in the hangar,
-                during heavy checks. If it doesn&apos;t hold up to the real
-                work, we don&apos;t ship it.
               </p>
             </div>
           </div>
