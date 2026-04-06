@@ -21,7 +21,7 @@ export default function SiteFooter() {
                 alt="Klein Manufacturing"
                 width={32}
                 height={32}
-                className="h-8 w-auto brightness-0 invert"
+                className="h-8 w-auto"
               />
               <span className="text-lg font-bold text-white">
                 Klein Manufacturing
