@@ -76,6 +76,14 @@ export default function SiteFooter() {
           <p className="text-center text-xs text-steel/70">
             &copy; 2024 Klein Manufacturing, LLC. All rights reserved.
           </p>
+          <p className="mt-2 text-center">
+            <Link
+              href="/portal/login"
+              className="text-xs text-gray-500 transition-colors hover:text-steel"
+            >
+              Portal Login
+            </Link>
+          </p>
         </div>
       </div>
     </footer>
