@@ -76,7 +76,7 @@ export async function POST(request: Request) {
 
         await resend.emails.send({
           from: "Klein Mfg Samples <onboarding@resend.dev>",
-          to: "kleinmanufacturing@gmail.com",
+          to: "sales@kleinmfgllc.com",
           subject,
           text: `New sample request received:\n\n${lines}`,
         });

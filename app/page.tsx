@@ -78,8 +78,7 @@ export default function Home() {
             </div>
 
             <p className="mt-6 text-sm text-white/60">
-              Made in the USA{" "}
-              <span aria-label="American flag">&#127482;&#127480;</span>
+              Made in the USA
             </p>
           </div>
 
