@@ -1,34 +1,31 @@
 import type { Metadata } from "next";
-import { Layers, Ruler, Search } from "lucide-react";
+import { Crosshair, ShieldCheck, Truck } from "lucide-react";
 import Button from "@/components/ui/Button";
 
 export const metadata: Metadata = {
   title: "About — Klein Manufacturing, LLC",
   description:
-    "Klein Manufacturing is a one-person operation making handcrafted phenolic aviation scrapers in the USA. Learn the story behind the tools.",
+    "Klein Manufacturing builds aircraft-safe phenolic scrapers for aviation maintenance professionals. American-made, shipped direct.",
 };
 
-const steps = [
+const cards = [
   {
-    number: "01",
-    icon: Layers,
-    title: "Start with the Right Material",
+    icon: Crosshair,
+    title: "Aviation-Specific Design",
     description:
-      "High-density phenolic selected specifically for hardness, chemical resistance, and non-scratch properties. Not all phenolic is the same — we source sheet stock that holds up to Skydrol, Jet-A, and hydraulic fluid without softening or degrading.",
+      "Not a hardware store scraper with a new label. Every Klein scraper is built specifically for aircraft surfaces — the material, the edge profile, and the dimensions are all designed for aviation maintenance.",
   },
   {
-    number: "02",
-    icon: Ruler,
-    title: "Hand-Cut to Size",
+    icon: ShieldCheck,
+    title: "Quality You Can Inspect",
     description:
-      "Each scraper is cut by hand to exact dimensions. No stamping, no injection molds, no automated cutting lines. This isn't mass production — it's a craftsman making tools one at a time.",
+      "Every scraper is individually inspected before it ships. If it's not right, it doesn't leave. No batch shortcuts.",
   },
   {
-    number: "03",
-    icon: Search,
-    title: "Edge-Finished and Inspected",
+    icon: Truck,
+    title: "Direct to Your Hangar",
     description:
-      "Every edge is finished to prevent splintering and ensure a clean scraping profile. Every unit is inspected before it goes in the box. If it's not right, it doesn't ship.",
+      "We sell direct and ship fast. No distributors, no middlemen, no six-week lead times.",
   },
 ];
 
@@ -42,53 +39,40 @@ export default function AboutPage() {
             Built by Hand. Trusted on&nbsp;the&nbsp;Flight&nbsp;Line.
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-steel">
-            Klein Manufacturing is a one-person operation built on the belief
-            that the best tools come from people who actually care about the
-            work.
+            Klein Manufacturing builds aircraft-safe phenolic scrapers for the
+            professionals who keep fleets flying. American-made, no exceptions.
           </p>
         </div>
       </section>
 
-      {/* ── SECTION 2 — THE STORY ── */}
+      {/* ── SECTION 2 — WHO WE ARE ── */}
       <section className="bg-white">
         <div className="mx-auto grid max-w-7xl items-start gap-12 px-4 py-20 sm:px-6 md:grid-cols-[3fr_2fr] lg:px-8">
           {/* Left — text */}
           <div>
-            <h2 className="text-3xl font-bold text-navy">The Klein Story</h2>
+            <h2 className="text-3xl font-bold text-navy">
+              Built for Aviation. Nothing&nbsp;Else.
+            </h2>
 
             <div className="mt-8 space-y-5 text-base leading-relaxed text-charcoal/80">
               <p>
-                It started with a simple problem that nobody was solving. Metal
-                scrapers gouge aluminum skin and damage painted surfaces. Cheap
-                plastic scrapers flex under load, snap in half, and leave you
-                fishing broken pieces out of a sealant bead. And yet, across
-                hangars and flight lines everywhere, maintenance crews were
-                being handed one or the other and told to make it work.
+                Klein Manufacturing has roots in aviation tooling going back
+                decades. This isn&apos;t a side project — it&apos;s a
+                continuation of work that&apos;s been trusted by airlines and
+                manufacturers since the 1990s.
               </p>
               <p>
-                Sean Klein saw it firsthand and asked a straightforward
-                question: why isn&apos;t anyone making a scraper that&apos;s
-                actually built for this job? Phenolic — the same material
-                trusted in aerospace electrical insulation and structural
-                laminates — had the right combination of rigidity, chemical
-                resistance, and surface safety. It just needed to be shaped
-                into a tool that a mechanic could actually use.
+                Our scrapers are purpose-built for aircraft maintenance —
+                sealant removal, gasket scraping, and surface prep on aluminum,
+                composites, and painted surfaces. They&apos;re not repurposed
+                industrial tools or generic plastic scrapers with an aviation
+                label slapped on the packaging.
               </p>
               <p>
-                So he started making them. Hand-cutting phenolic sheet stock in
-                his shop, testing edge profiles on real aircraft surfaces,
-                refining the geometry until the scraper did exactly what it was
-                supposed to do — remove sealant cleanly without scratching the
-                substrate underneath. He shipped the first batches to MRO shops
-                and airline maintenance teams who needed a better answer than
-                &ldquo;use a putty knife and hope for the best.&rdquo;
-              </p>
-              <p>
-                Every Klein scraper today is still made the same way: hand-cut,
-                edge-finished, and inspected by Sean before it ships. No
-                factory floor. No outsourced labor. Just one person making sure
-                every tool that leaves the shop is something he&apos;d trust on
-                his own aircraft.
+                We work directly with maintenance teams to make sure the product
+                performs where it matters: on the flight line, in the hangar,
+                during heavy checks. If it doesn&apos;t hold up to the real
+                work, we don&apos;t ship it.
               </p>
             </div>
           </div>
@@ -96,39 +80,34 @@ export default function AboutPage() {
           {/* Right — placeholder image (desktop only) */}
           <div className="hidden md:block">
             <div className="flex aspect-[4/5] items-center justify-center rounded-lg bg-gray-100 text-sm text-steel">
-              Photo: Sean / Shop
+              Photo: Shop
             </div>
           </div>
         </div>
       </section>
 
-      {/* ── SECTION 3 — THE PROCESS ── */}
+      {/* ── SECTION 3 — WHAT SETS US APART ── */}
       <section className="bg-offwhite">
         <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
           <h2 className="text-center text-3xl font-bold text-navy sm:text-4xl">
-            How Every Scraper Is Made
+            Why Maintenance Teams Trust Klein
           </h2>
 
           <div className="mt-14 grid gap-8 md:grid-cols-3">
-            {steps.map((step) => (
+            {cards.map((card) => (
               <div
-                key={step.number}
-                className="rounded-lg border border-navy/20 bg-white p-8 shadow-sm"
+                key={card.title}
+                className="rounded-lg border border-navy/20 bg-white p-8 shadow-sm transition-shadow hover:shadow-md"
               >
-                <div className="flex items-center gap-4">
-                  <span className="text-3xl font-bold text-navy/20">
-                    {step.number}
-                  </span>
-                  <step.icon
-                    className="h-8 w-8 text-navy"
-                    strokeWidth={1.5}
-                  />
-                </div>
+                <card.icon
+                  className="h-10 w-10 text-navy"
+                  strokeWidth={1.5}
+                />
                 <h3 className="mt-5 text-xl font-semibold text-navy">
-                  {step.title}
+                  {card.title}
                 </h3>
                 <p className="mt-3 leading-relaxed text-charcoal/80">
-                  {step.description}
+                  {card.description}
                 </p>
               </div>
             ))}
@@ -140,13 +119,12 @@ export default function AboutPage() {
       <section className="bg-[#1C2E4A]">
         <div className="mx-auto max-w-3xl px-4 py-20 text-center sm:px-6 lg:px-8">
           <h2 className="text-3xl font-bold text-white sm:text-4xl">
-            Handcrafted in the USA{" "}
-            <span aria-label="American flag">&#127482;&#127480;</span>
+            Made in America. Shipped&nbsp;Direct.
           </h2>
           <p className="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-steel">
-            Every Klein scraper is made in America. No overseas suppliers. No
-            outsourced quality checks. Just American craftsmanship, shipped
-            directly to your hangar.
+            Every Klein scraper is manufactured in the USA. No overseas
+            suppliers. No outsourced production. American-made tooling, shipped
+            directly to your maintenance team.
           </p>
         </div>
       </section>
