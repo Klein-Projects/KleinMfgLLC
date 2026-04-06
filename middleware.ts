@@ -26,7 +26,25 @@ export async function middleware(request: NextRequest) {
   )
 
   // Refresh session if expired
-  await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const { pathname } = request.nextUrl
+
+  // Protect /portal/* routes (except /portal/login)
+  if (pathname.startsWith('/portal') && pathname !== '/portal/login') {
+    if (!user) {
+      const loginUrl = request.nextUrl.clone()
+      loginUrl.pathname = '/portal/login'
+      return NextResponse.redirect(loginUrl)
+    }
+  }
+
+  // If logged in and on login page, redirect to portal
+  if (pathname === '/portal/login' && user) {
+    const portalUrl = request.nextUrl.clone()
+    portalUrl.pathname = '/portal'
+    return NextResponse.redirect(portalUrl)
+  }
 
   return supabaseResponse
 }
