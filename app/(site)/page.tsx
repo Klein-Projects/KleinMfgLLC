@@ -58,7 +58,7 @@ export default function Home() {
             <h1 className="text-4xl font-bold leading-tight tracking-tight text-white sm:text-5xl">
               Aircraft Scrapers Built&nbsp;for&nbsp;the Flight&nbsp;Line
             </h1>
-            <p className="mx-auto mt-6 max-w-lg text-lg leading-relaxed text-steel lg:mx-0">
+            <p className="mx-auto mt-6 max-w-lg text-lg leading-relaxed text-white/85 lg:mx-0">
               Handcrafted phenolic scrapers — safer than metal, more rigid than
               plastic. Trusted by aviation maintenance professionals.
             </p>
@@ -77,7 +77,7 @@ export default function Home() {
               </Button>
             </div>
 
-            <p className="mt-6 text-sm text-white/60">
+            <p className="mt-6 text-sm text-white/80">
               Made in the USA
             </p>
           </div>
@@ -130,14 +130,16 @@ export default function Home() {
       {/* ── SECTION 3 — TRUSTED BY ── */}
       <section className="bg-offwhite">
         <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-          <p className="text-center text-sm font-medium uppercase tracking-wider text-steel">
-            Trusted by Aviation Professionals
+          <p className="mx-auto max-w-2xl text-center text-base text-navy">
+            These scrapers have been made in America for over 30 years — trusted
+            by aviation professionals across commercial airlines, aircraft
+            manufacturing, and MRO operations.
           </p>
 
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-x-10 gap-y-4">
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-x-10 gap-y-4">
             {industryCategories.map((name, i) => (
               <span key={name} className="flex items-center gap-10">
-                <span className="text-lg font-semibold tracking-wide text-navy/60">
+                <span className="text-lg font-semibold tracking-wide text-navy">
                   {name}
                 </span>
                 {i < industryCategories.length - 1 && (
