@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   Mail,
   Phone,
-  Linkedin,
+  ExternalLink,
   Pencil,
   Package,
   FileText,
@@ -253,7 +253,7 @@ export default function LeadDetailClient({
                 )}
                 {contact.linkedin_url && (
                   <p className="flex items-center gap-2 text-sm">
-                    <Linkedin className="h-3.5 w-3.5 text-steel" />
+                    <ExternalLink className="h-3.5 w-3.5 text-steel" />
                     <a
                       href={contact.linkedin_url}
                       target="_blank"
