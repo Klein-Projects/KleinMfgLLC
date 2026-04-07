@@ -5,8 +5,8 @@ import {
   Bell,
   Send,
   Trophy,
-  CheckCircle,
 } from "lucide-react";
+import FollowUpPanel from "@/components/portal/FollowUpPanel";
 
 // ── Helpers ──
 
@@ -158,7 +158,7 @@ export default async function PortalDashboard() {
     // All leads for pipeline
     supabase.from("leads").select("status"),
 
-    // Follow-up list (next 3 days)
+    // Follow-up list (overdue + next 3 days)
     supabase
       .from("leads")
       .select(
@@ -167,7 +167,7 @@ export default async function PortalDashboard() {
       .lte("follow_up_date", threeDaysOut)
       .not("status", "in", "(won,lost)")
       .order("follow_up_date", { ascending: true })
-      .limit(8),
+      .limit(15),
 
     // Recent activity
     supabase
@@ -300,54 +300,7 @@ export default async function PortalDashboard() {
             </Link>
           </div>
 
-          {followUpList.length === 0 ? (
-            <div className="mt-8 flex flex-col items-center gap-2 text-center">
-              <CheckCircle className="h-8 w-8 text-green-500" />
-              <p className="text-sm font-medium text-green-700">
-                All caught up!
-              </p>
-            </div>
-          ) : (
-            <ul className="mt-4 divide-y divide-navy/5">
-              {followUpList.map((lead: any) => {
-                const contact = lead.contact;
-                const company = lead.company;
-                const contactName = contact
-                  ? `${contact.first_name} ${contact.last_name}`
-                  : "Unknown";
-                const companyName = company?.name ?? "";
-                const due = followUpLabel(lead.follow_up_date);
-
-                return (
-                  <li key={lead.id} className="py-3">
-                    <Link
-                      href={`/portal/leads/${lead.id}`}
-                      className="group flex items-center justify-between"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-navy group-hover:underline">
-                          {contactName}
-                        </p>
-                        {companyName && (
-                          <p className="truncate text-xs text-steel">
-                            {companyName}
-                          </p>
-                        )}
-                      </div>
-                      <div className="ml-3 flex shrink-0 items-center gap-2">
-                        <span className={`text-xs font-semibold ${due.color}`}>
-                          {due.text}
-                        </span>
-                        <span className="rounded bg-navy/10 px-1.5 py-0.5 text-[10px] font-medium text-navy">
-                          {stageLabels[lead.status]}
-                        </span>
-                      </div>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+          <FollowUpPanel leads={followUpList} />
         </div>
       </div>
 

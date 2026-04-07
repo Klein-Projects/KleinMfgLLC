@@ -11,7 +11,7 @@ import {
   Package,
   FileText,
 } from "lucide-react";
-import { updateLeadField, logActivity } from "../actions";
+import { updateLeadField, logActivity, setFollowUpDate } from "../actions";
 
 const STATUS_OPTIONS = [
   "new",
@@ -307,6 +307,32 @@ export default function LeadDetailClient({
                   onBlur={(e) => handleFollowUpChange(e.target.value)}
                   className="mt-1 w-full rounded-md border border-navy/20 bg-white px-3 py-2 text-sm text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
                 />
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {([
+                    { label: "Tomorrow", days: 1 },
+                    { label: "In 3 days", days: 3 },
+                    { label: "Next week", days: 7 },
+                    { label: "In 2 weeks", days: 14 },
+                  ] as const).map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => {
+                        const d = new Date();
+                        d.setDate(d.getDate() + preset.days);
+                        const dateStr = d.toISOString().split("T")[0];
+                        startTransition(async () => {
+                          await setFollowUpDate(lead.id, dateStr);
+                          router.refresh();
+                        });
+                      }}
+                      className="rounded border border-navy/15 bg-navy/5 px-2 py-0.5 text-[11px] font-medium text-navy transition-colors hover:bg-navy/10 disabled:opacity-50"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Source */}

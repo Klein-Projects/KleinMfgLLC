@@ -53,6 +53,113 @@ export async function logActivity(formData: FormData) {
   revalidatePath(`/portal/leads/${leadId}`);
 }
 
+// ── Snooze Follow-Up ──
+
+export async function snoozeFollowUp(leadId: string) {
+  const supabase = createClient();
+
+  const { data: lead, error: fetchErr } = await supabase
+    .from("leads")
+    .select("follow_up_date")
+    .eq("id", leadId)
+    .single();
+
+  if (fetchErr) throw new Error(fetchErr.message);
+
+  const base = lead.follow_up_date
+    ? new Date(lead.follow_up_date)
+    : new Date();
+  base.setDate(base.getDate() + 3);
+  const newDate = base.toISOString().split("T")[0];
+
+  const { error } = await supabase
+    .from("leads")
+    .update({ follow_up_date: newDate })
+    .eq("id", leadId);
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/portal");
+  revalidatePath(`/portal/leads/${leadId}`);
+}
+
+// ── Mark Contacted ──
+
+export async function markContacted(leadId: string) {
+  const supabase = createClient();
+
+  // Log follow-up activity
+  const { error: actErr } = await supabase.from("activities").insert({
+    lead_id: leadId,
+    type: "follow_up",
+    summary: "Marked contacted from dashboard",
+  });
+  if (actErr) throw new Error(actErr.message);
+
+  // If status is 'new', upgrade to 'contacted'
+  const { data: lead } = await supabase
+    .from("leads")
+    .select("status")
+    .eq("id", leadId)
+    .single();
+
+  const updates: Record<string, any> = {
+    last_activity_at: new Date().toISOString(),
+  };
+  if (lead?.status === "new") {
+    updates.status = "contacted";
+  }
+
+  const { error } = await supabase
+    .from("leads")
+    .update(updates)
+    .eq("id", leadId);
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/portal");
+  revalidatePath(`/portal/leads/${leadId}`);
+}
+
+// ── Quick Log Activity (from slide-over) ──
+
+export async function quickLogActivity(
+  leadId: string,
+  type: string,
+  summary: string
+) {
+  const supabase = createClient();
+
+  if (!summary?.trim()) throw new Error("Summary is required");
+
+  const { error } = await supabase.from("activities").insert({
+    lead_id: leadId,
+    type,
+    summary: summary.trim(),
+  });
+  if (error) throw new Error(error.message);
+
+  await supabase
+    .from("leads")
+    .update({ last_activity_at: new Date().toISOString() })
+    .eq("id", leadId);
+
+  revalidatePath("/portal");
+  revalidatePath(`/portal/leads/${leadId}`);
+}
+
+// ── Set Follow-Up Date ──
+
+export async function setFollowUpDate(leadId: string, date: string) {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("leads")
+    .update({ follow_up_date: date || null })
+    .eq("id", leadId);
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/portal");
+  revalidatePath(`/portal/leads/${leadId}`);
+}
+
 // ── Create Lead ──
 
 export async function createLead(formData: FormData) {

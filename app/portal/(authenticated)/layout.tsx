@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import PortalShell from "@/components/portal/PortalShell";
+import QuickLogSlideOver from "@/components/portal/QuickLogSlideOver";
 
 export default async function PortalLayout({
   children,
@@ -16,5 +17,10 @@ export default async function PortalLayout({
     redirect("/portal/login");
   }
 
-  return <PortalShell userEmail={user.email ?? ""}>{children}</PortalShell>;
+  return (
+    <PortalShell userEmail={user.email ?? ""}>
+      {children}
+      <QuickLogSlideOver />
+    </PortalShell>
+  );
 }
