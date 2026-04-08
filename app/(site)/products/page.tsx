@@ -14,7 +14,7 @@ const products = [
     name: '6" Phenolic Aviation Scraper',
     photos: [
       { src: "/MDP_8838-p.png", label: "Top View" },
-      { src: "/MDP_8839-p.jpg", label: "Side Profile" },
+      { src: "/MDP_8839-p.png", label: "Side Profile" },
       { src: "/MDP_8856-p.png", label: "Front View" },
     ],
     alt: "Klein 6-inch phenolic aviation scraper",
@@ -30,7 +30,7 @@ const products = [
     name: '11" Phenolic Aviation Scraper (Long-Reach)',
     photos: [
       { src: "/MDP_8837-p.png", label: "Top View" },
-      { src: "/MDP_8835-p.jpg", label: "Side Profile" },
+      { src: "/MDP_8835-p.png", label: "Side Profile" },
       { src: "/MDP_8855-p.png", label: "Front View" },
     ],
     alt: "Klein 11-inch phenolic aviation scraper",
