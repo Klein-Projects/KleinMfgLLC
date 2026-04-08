@@ -47,35 +47,35 @@ export default function AboutPage() {
 
       {/* ── SECTION 2 — WHO WE ARE ── */}
       <section className="bg-white">
-        <div className="mx-auto grid max-w-7xl items-start gap-12 px-4 py-20 sm:px-6 md:grid-cols-[3fr_2fr] lg:px-8">
-          {/* Left — text */}
-          <div>
-            <h2 className="text-3xl font-bold text-navy">
-              Built for Aviation. Nothing&nbsp;Else.
-            </h2>
+        <div className="mx-auto max-w-3xl px-4 py-20 sm:px-6 lg:px-8">
+          <h2 className="text-3xl font-bold text-navy">
+            Built for Aviation. Nothing&nbsp;Else.
+          </h2>
 
-            <div className="mt-8 space-y-5 text-base leading-relaxed text-charcoal/80">
-              <p>
-                Klein Manufacturing has roots in aviation tooling spanning over
-                30 years. Our phenolic scrapers have been trusted by airlines
-                and aircraft manufacturers for decades — and every unit we ship
-                today is held to that same standard.
-              </p>
-              <p>
-                Our scrapers are purpose-built for aircraft maintenance —
-                sealant removal, gasket scraping, and surface prep on aluminum,
-                composites, and painted surfaces. They&apos;re not repurposed
-                industrial tools or generic plastic scrapers with an aviation
-                label slapped on the packaging.
-              </p>
-            </div>
-          </div>
-
-          {/* Right — placeholder image (desktop only) */}
-          <div className="hidden md:block">
-            <div className="flex aspect-[4/5] items-center justify-center rounded-lg bg-gray-100 text-sm text-steel">
-              Photo: Shop
-            </div>
+          <div className="mt-8 space-y-5 text-base leading-relaxed text-charcoal/80">
+            <p>
+              Klein Manufacturing carries on a tradition of American-made
+              aviation tooling spanning over 30 years. These phenolic scrapers
+              have been trusted by commercial airlines, aircraft manufacturers,
+              and MRO operations for decades — and every unit we ship today is
+              held to that same standard.
+            </p>
+            <p>
+              Our scrapers are purpose-built for aircraft maintenance — sealant
+              removal, gasket scraping, and surface prep on aluminum,
+              composites, and painted surfaces. They&apos;re not repurposed
+              industrial tools or generic plastic scrapers with an aviation
+              label slapped on. The material, the edge profile, and the
+              dimensions are all specific to the demands of aircraft maintenance
+              work.
+            </p>
+            <p>
+              Because we sell direct and don&apos;t work through distributors,
+              every order gets personal attention. If something isn&apos;t
+              right, it doesn&apos;t ship. That&apos;s a standard we&apos;ve
+              held since day one, and it&apos;s why maintenance teams keep
+              coming back.
+            </p>
           </div>
         </div>
       </section>
