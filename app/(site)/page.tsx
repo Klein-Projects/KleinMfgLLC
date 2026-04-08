@@ -34,71 +34,73 @@ export default function Home() {
   return (
     <>
       {/* ── SECTION 1 — HERO ── */}
-      <section className="bg-[#1C2E4A] overflow-hidden">
-        <div className="mx-auto grid max-w-7xl items-center gap-8 px-4 py-20 sm:px-6 lg:grid-cols-[1fr_2fr_1fr] lg:gap-12 lg:px-8 lg:py-28">
-          {/* Left — 6" scraper */}
-          <div className="hidden lg:block">
-            <div className="relative aspect-[3/5] w-full">
-              <Image
-                src="/MDP_8856-p.png"
-                alt="Klein 6-inch phenolic aviation scraper"
-                fill
-                unoptimized
-                className="object-contain drop-shadow-2xl"
-                sizes="25vw"
-                priority
-              />
-            </div>
-            <p className="mt-3 text-center text-sm font-medium text-steel">
-              6&quot; Scraper
-            </p>
-          </div>
-
-          {/* Center copy */}
-          <div className="text-center lg:text-left">
-            <h1 className="text-4xl font-bold leading-tight tracking-tight text-white sm:text-5xl">
-              Aircraft Scrapers Built&nbsp;for&nbsp;the Flight&nbsp;Line
-            </h1>
-            <p className="mx-auto mt-6 max-w-lg text-lg leading-relaxed text-white/85 lg:mx-0">
-              Handcrafted phenolic scrapers — safer than metal, more rigid than
-              plastic. Trusted by aviation maintenance professionals.
-            </p>
-
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-4 lg:justify-start">
-              <Button href="/request-samples" size="lg">
-                Request Free Samples &rarr;
-              </Button>
-              <Button
-                href="/products"
-                variant="outline"
-                size="lg"
-                className="border-white text-white hover:bg-white hover:text-navy"
-              >
-                View Products
-              </Button>
+      <section className="bg-[#1C2E4A] overflow-hidden py-20">
+        <div className="bg-white w-full py-12">
+          <div className="mx-auto grid max-w-7xl items-center gap-8 px-4 sm:px-6 lg:grid-cols-[1fr_2fr_1fr] lg:gap-12 lg:px-8">
+            {/* Left — 6" scraper */}
+            <div className="hidden lg:block">
+              <div className="relative aspect-[3/5] w-full">
+                <Image
+                  src="/MDP_8856-p.png"
+                  alt="Klein 6-inch phenolic aviation scraper"
+                  fill
+                  unoptimized
+                  className="object-contain drop-shadow-2xl"
+                  sizes="25vw"
+                  priority
+                />
+              </div>
+              <p className="mt-3 text-center text-sm font-medium text-navy/60">
+                6&quot; Scraper
+              </p>
             </div>
 
-            <p className="mt-6 text-sm text-white/80">
-              Made in the USA
-            </p>
-          </div>
+            {/* Center copy */}
+            <div className="text-center lg:text-left">
+              <h1 className="text-4xl font-bold leading-tight tracking-tight text-navy sm:text-5xl">
+                Aircraft Scrapers Built&nbsp;for&nbsp;the Flight&nbsp;Line
+              </h1>
+              <p className="mx-auto mt-6 max-w-lg text-lg leading-relaxed text-charcoal lg:mx-0">
+                Handcrafted phenolic scrapers — safer than metal, more rigid than
+                plastic. Trusted by aviation maintenance professionals.
+              </p>
 
-          {/* Right — 11" scraper */}
-          <div className="hidden lg:block">
-            <div className="relative aspect-[3/5] w-full">
-              <Image
-                src="/MDP_8855-p.png"
-                alt="Klein 11-inch phenolic aviation scraper"
-                fill
-                unoptimized
-                className="object-contain drop-shadow-2xl"
-                sizes="25vw"
-                priority
-              />
+              <div className="mt-8 flex flex-wrap items-center justify-center gap-4 lg:justify-start">
+                <Button href="/request-samples" size="lg">
+                  Request Free Samples &rarr;
+                </Button>
+                <Button
+                  href="/products"
+                  variant="outline"
+                  size="lg"
+                  className="border-navy text-navy hover:bg-navy hover:text-white"
+                >
+                  View Products
+                </Button>
+              </div>
+
+              <p className="mt-4 text-base font-semibold text-red">
+                Made in the USA
+              </p>
             </div>
-            <p className="mt-3 text-center text-sm font-medium text-steel">
-              11&quot; Long-Reach Scraper
-            </p>
+
+            {/* Right — 11" scraper */}
+            <div className="hidden lg:block">
+              <div className="relative aspect-[3/5] w-full">
+                <Image
+                  src="/MDP_8855-p.png"
+                  alt="Klein 11-inch phenolic aviation scraper"
+                  fill
+                  unoptimized
+                  className="object-contain drop-shadow-2xl"
+                  sizes="25vw"
+                  priority
+                />
+              </div>
+              <p className="mt-3 text-center text-sm font-medium text-navy/60">
+                11&quot; Long-Reach Scraper
+              </p>
+            </div>
           </div>
         </div>
       </section>
