@@ -62,7 +62,7 @@ export default function ProductsPage() {
           <h1 className="text-3xl font-bold text-white sm:text-4xl">
             Aviation Scrapers — Handcrafted in&nbsp;the&nbsp;USA
           </h1>
-          <p className="mt-3 text-lg text-steel">
+          <p className="mt-3 text-lg text-white/85">
             Two sizes. Same uncompromising quality.
           </p>
         </div>

@@ -38,7 +38,7 @@ export default function AboutPage() {
           <h1 className="text-4xl font-bold leading-tight tracking-tight text-white sm:text-5xl">
             Built by Hand. Trusted on&nbsp;the&nbsp;Flight&nbsp;Line.
           </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-steel">
+          <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-white/85">
             Klein Manufacturing builds aircraft-safe phenolic scrapers for the
             professionals who keep fleets flying. American-made, no exceptions.
           </p>
@@ -56,8 +56,8 @@ export default function AboutPage() {
 
             <div className="mt-8 space-y-5 text-base leading-relaxed text-charcoal/80">
               <p>
-                Klein Manufacturing has roots in aviation tooling going back to
-                the 1990s. Our phenolic scrapers have been trusted by airlines
+                Klein Manufacturing has roots in aviation tooling spanning over
+                30 years. Our phenolic scrapers have been trusted by airlines
                 and aircraft manufacturers for decades — and every unit we ship
                 today is held to that same standard.
               </p>
@@ -115,7 +115,7 @@ export default function AboutPage() {
           <h2 className="text-3xl font-bold text-white sm:text-4xl">
             Made in America. Shipped&nbsp;Direct.
           </h2>
-          <p className="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-steel">
+          <p className="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-white/85">
             Every Klein scraper is manufactured in the USA. No overseas
             suppliers. No outsourced production. American-made tooling, shipped
             directly to your maintenance team.
