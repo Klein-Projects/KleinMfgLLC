@@ -18,8 +18,10 @@ const products = [
       { src: "/MDP_8856-p.png", label: "Front View" },
     ],
     alt: "Klein 6-inch phenolic aviation scraper",
-    description:
-      "Compact scraper ideal for tight spaces, cockpit components, detail work, and around avionics. The go-to tool for precision sealant work.",
+    description: [
+      "Compact and easy to maneuver, our 6-inch phenolic scraper is engineered for precision in tight or hard-to-reach spaces — cockpit components, around avionics, detail work, and confined access areas.",
+      "Machined from high-strength, industrial-grade phenolic, it safely lifts cured sealants, adhesives, and debris from aircraft skins, composite panels, and painted finishes — without scratching or gouging the underlying material. Its lightweight, ergonomic profile gives technicians greater control during detailed surface work.",
+    ],
     bestFor: "Sealant removal, gasket scraping, surface prep, detail work",
     size: "6 inches",
     queryParam: "6inch",
@@ -32,8 +34,10 @@ const products = [
       { src: "/MDP_8855-p.png", label: "Front View" },
     ],
     alt: "Klein 11-inch phenolic aviation scraper",
-    description:
-      "Extra-length scraper for larger panels, wing surfaces, and fuselage work. The leverage advantage makes it the preferred choice for heavy maintenance checks.",
+    description: [
+      "Designed for extended reach and broader coverage, our 11-inch phenolic scraper is the go-to tool for larger surface areas — fuselage skins, access panels, fairings, wing surfaces, and flat expanses where a shorter scraper can\u2019t keep up.",
+      "Precision-machined from the same industrial-grade phenolic as our 6-inch, its non-metallic edge lifts cured sealants, adhesives, and coatings without damaging paint, composite, or metal finishes. The longer profile provides improved leverage and reach, making it the preferred choice for heavy maintenance checks and C-checks.",
+    ],
     bestFor: "C-checks, heavy maintenance, wing panels, fuselage work",
     size: "11 inches",
     queryParam: "11inch",
@@ -89,9 +93,13 @@ export default function ProductsPage() {
 
               <div className="p-6 sm:p-8">
                 <h2 className="text-2xl font-bold text-navy">{product.name}</h2>
-                <p className="mt-3 leading-relaxed text-charcoal/80">
-                  {product.description}
-                </p>
+                <div className="mt-3 space-y-3">
+                  {product.description.map((para) => (
+                    <p key={para.slice(0, 40)} className="leading-relaxed text-charcoal/80">
+                      {para}
+                    </p>
+                  ))}
+                </div>
 
                 {/* Specs table */}
                 <table className="mt-6 w-full text-sm">
@@ -192,7 +200,8 @@ export default function ProductsPage() {
             Ready to Try Klein Scrapers?
           </h2>
           <p className="mt-4 text-lg text-white/80">
-            Request free samples — no commitment. We ship fast.
+            Request free samples, ask about pricing, or inquire about bulk
+            orders — we respond within one business day.
           </p>
           <div className="mt-8">
             <Button
