@@ -79,8 +79,8 @@ export default function Home() {
                 </Button>
               </div>
 
-              <p className="mt-4 text-center text-lg font-bold text-red">
-                🇺🇸 Made in the USA 🇺🇸
+              <p className="mt-4 text-center text-xl font-bold text-red">
+                Made in the USA
               </p>
             </div>
 
