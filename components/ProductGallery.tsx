@@ -29,7 +29,7 @@ export default function ProductGallery({ photos, alt }: ProductGalleryProps) {
             className={`object-contain transition-opacity duration-300 ${
               i === active ? "opacity-100" : "opacity-0"
             }`}
-            style={{ mixBlendMode: "multiply" }}
+
             sizes="(max-width: 768px) 100vw, 50vw"
           />
         ))}
@@ -53,7 +53,7 @@ export default function ProductGallery({ photos, alt }: ProductGalleryProps) {
                 alt={photo.label}
                 fill
                 className="object-contain"
-                style={{ mixBlendMode: "multiply" }}
+    
                 sizes="80px"
               />
             </div>
