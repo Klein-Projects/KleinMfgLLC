@@ -43,6 +43,7 @@ export default function Home() {
                 src="/MDP_8856-p.png"
                 alt="Klein 6-inch phenolic aviation scraper"
                 fill
+                unoptimized
                 className="object-contain drop-shadow-2xl"
                 sizes="25vw"
                 priority
@@ -89,6 +90,7 @@ export default function Home() {
                 src="/MDP_8855-p.png"
                 alt="Klein 11-inch phenolic aviation scraper"
                 fill
+                unoptimized
                 className="object-contain drop-shadow-2xl"
                 sizes="25vw"
                 priority
