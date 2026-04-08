@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import { Check, X } from "lucide-react";
 import Button from "@/components/ui/Button";
+import ProductGallery from "@/components/ProductGallery";
 
 export const metadata: Metadata = {
   title: "Products — Klein Manufacturing, LLC",
@@ -12,7 +12,11 @@ export const metadata: Metadata = {
 const products = [
   {
     name: '6" Phenolic Aviation Scraper',
-    image: "/MDP_8838-p.png",
+    photos: [
+      { src: "/MDP_8838-p.png", label: "Top View" },
+      { src: "/MDP_8839-p.jpg", label: "Side Profile" },
+      { src: "/MDP_8856-p.png", label: "Front View" },
+    ],
     alt: "Klein 6-inch phenolic aviation scraper",
     description:
       "Compact scraper ideal for tight spaces, cockpit components, detail work, and around avionics. The go-to tool for precision sealant work.",
@@ -22,7 +26,11 @@ const products = [
   },
   {
     name: '11" Phenolic Aviation Scraper (Long-Reach)',
-    image: "/MDP_8837-p.png",
+    photos: [
+      { src: "/MDP_8837-p.png", label: "Top View" },
+      { src: "/MDP_8835-p.jpg", label: "Side Profile" },
+      { src: "/MDP_8855-p.png", label: "Front View" },
+    ],
     alt: "Klein 11-inch phenolic aviation scraper",
     description:
       "Extra-length scraper for larger panels, wing surfaces, and fuselage work. The leverage advantage makes it the preferred choice for heavy maintenance checks.",
@@ -76,16 +84,8 @@ export default function ProductsPage() {
               key={product.queryParam}
               className="overflow-hidden rounded-lg border border-navy/20 bg-white shadow-sm"
             >
-              {/* Product photo */}
-              <div className="relative aspect-[4/3] bg-white">
-                <Image
-                  src={product.image}
-                  alt={product.alt}
-                  fill
-                  className="object-contain"
-                  sizes="(max-width: 768px) 100vw, 50vw"
-                />
-              </div>
+              {/* Product photo gallery */}
+              <ProductGallery photos={product.photos} alt={product.alt} />
 
               <div className="p-6 sm:p-8">
                 <h2 className="text-2xl font-bold text-navy">{product.name}</h2>

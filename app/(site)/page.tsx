@@ -44,6 +44,7 @@ export default function Home() {
                 alt="Klein 6-inch phenolic aviation scraper"
                 fill
                 className="rounded-lg object-contain drop-shadow-2xl"
+                style={{ mixBlendMode: "multiply" }}
                 sizes="25vw"
                 priority
               />
@@ -90,6 +91,7 @@ export default function Home() {
                 alt="Klein 11-inch phenolic aviation scraper"
                 fill
                 className="rounded-lg object-contain drop-shadow-2xl"
+                style={{ mixBlendMode: "multiply" }}
                 sizes="25vw"
                 priority
               />
