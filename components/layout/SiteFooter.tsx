@@ -74,7 +74,7 @@ export default function SiteFooter() {
       <div className="border-t border-white/10">
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
           <p className="text-center text-xs text-steel/70">
-            &copy; 2024 Klein Manufacturing, LLC. All rights reserved.
+            &copy; 2026 Klein Manufacturing, LLC. All rights reserved.
           </p>
           <p className="mt-2 text-center">
             <Link
