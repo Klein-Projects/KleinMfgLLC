@@ -1,36 +1,23 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useState } from "react";
 import Button from "@/components/ui/Button";
 
 function SampleRequestForm() {
-  const searchParams = useSearchParams();
-
   const [form, setForm] = useState({
     name: "",
     company: "",
     job_title: "",
     email: "",
     phone: "",
-    quantity_6inch: 0,
-    quantity_11inch: 0,
+    quantity_6inch: 1,
+    quantity_11inch: 1,
     shipping_address: "",
     notes: "",
   });
 
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
-
-  // Pre-fill quantity from URL param
-  useEffect(() => {
-    const product = searchParams.get("product");
-    if (product === "6inch") {
-      setForm((f) => ({ ...f, quantity_6inch: 1 }));
-    } else if (product === "11inch") {
-      setForm((f) => ({ ...f, quantity_11inch: 1 }));
-    }
-  }, [searchParams]);
 
   function update(field: string, value: string | number) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -173,34 +160,13 @@ function SampleRequestForm() {
         </div>
       </div>
 
-      {/* Quantities row */}
-      <div className="grid gap-6 sm:grid-cols-2">
-        <div>
-          <label htmlFor="quantity_6inch" className="block text-sm font-semibold text-navy">
-            Quantity: 6&quot; Scrapers
-          </label>
-          <input
-            id="quantity_6inch"
-            type="number"
-            min={0}
-            value={form.quantity_6inch}
-            onChange={(e) => update("quantity_6inch", parseInt(e.target.value) || 0)}
-            className="mt-1.5 w-full rounded-md border border-navy/20 px-4 py-2.5 text-charcoal outline-none transition focus:border-navy focus:ring-2 focus:ring-navy/20"
-          />
-        </div>
-        <div>
-          <label htmlFor="quantity_11inch" className="block text-sm font-semibold text-navy">
-            Quantity: 11&quot; Scrapers
-          </label>
-          <input
-            id="quantity_11inch"
-            type="number"
-            min={0}
-            value={form.quantity_11inch}
-            onChange={(e) => update("quantity_11inch", parseInt(e.target.value) || 0)}
-            className="mt-1.5 w-full rounded-md border border-navy/20 px-4 py-2.5 text-charcoal outline-none transition focus:border-navy focus:ring-2 focus:ring-navy/20"
-          />
-        </div>
+      {/* What you'll receive */}
+      <div className="rounded-md border border-navy/20 bg-offwhite px-4 py-3">
+        <p className="text-sm font-semibold text-navy">What you&apos;ll receive:</p>
+        <ul className="mt-1.5 space-y-0.5 text-sm text-charcoal">
+          <li>1 × 6&quot; Scraper</li>
+          <li>1 × 11&quot; Scraper</li>
+        </ul>
       </div>
 
       {/* Shipping Address */}
@@ -280,9 +246,7 @@ export default function RequestSamplesPage() {
       {/* ── FORM ── */}
       <section className="bg-white">
         <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-          <Suspense fallback={null}>
-            <SampleRequestForm />
-          </Suspense>
+          <SampleRequestForm />
         </div>
       </section>
     </>
