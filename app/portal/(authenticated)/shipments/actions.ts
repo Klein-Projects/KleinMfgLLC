@@ -52,3 +52,58 @@ export async function createShipment(formData: FormData) {
   revalidatePath("/portal/shipments");
   redirect("/portal/shipments");
 }
+
+// ── Update Shipment ──
+
+const VALID_CARRIERS = ["usps", "ups", "fedex"] as const;
+const VALID_STATUSES = [
+  "pending",
+  "in_transit",
+  "out_for_delivery",
+  "delivered",
+  "exception",
+] as const;
+
+export async function updateShipment(
+  shipmentId: string,
+  fields: {
+    carrier: string;
+    status: string;
+    delivered_at: string | null;
+  }
+) {
+  const supabase = createClient();
+
+  if (!VALID_CARRIERS.includes(fields.carrier as any)) {
+    throw new Error("Invalid carrier");
+  }
+  if (!VALID_STATUSES.includes(fields.status as any)) {
+    throw new Error("Invalid status");
+  }
+
+  const { data: existing, error: fetchErr } = await supabase
+    .from("shipments")
+    .select("lead_id")
+    .eq("id", shipmentId)
+    .single();
+
+  if (fetchErr) throw new Error(fetchErr.message);
+
+  const { error } = await supabase
+    .from("shipments")
+    .update({
+      carrier: fields.carrier,
+      status: fields.status,
+      delivered_at: fields.delivered_at
+        ? new Date(fields.delivered_at).toISOString()
+        : null,
+    })
+    .eq("id", shipmentId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/portal/shipments");
+  if (existing?.lead_id) {
+    revalidatePath(`/portal/leads/${existing.lead_id}`);
+  }
+}

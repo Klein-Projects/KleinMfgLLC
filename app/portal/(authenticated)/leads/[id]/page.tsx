@@ -34,10 +34,20 @@ export default async function LeadDetailPage({
     .eq("lead_id", params.id)
     .order("created_at", { ascending: false });
 
+  // Fetch shipments linked to this lead
+  const { data: shipments } = await supabase
+    .from("shipments")
+    .select(
+      "id, tracking_number, carrier, status, shipped_at, delivered_at, recipient_name, lead_id"
+    )
+    .eq("lead_id", params.id)
+    .order("created_at", { ascending: false });
+
   return (
     <LeadDetailClient
       lead={lead}
       activities={activities ?? []}
+      shipments={shipments ?? []}
     />
   );
 }

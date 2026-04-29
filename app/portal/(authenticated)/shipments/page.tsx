@@ -3,7 +3,16 @@
 import { useEffect, useState, useMemo, useTransition } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { Plus, RefreshCw, Package, ExternalLink } from "lucide-react";
+import {
+  Plus,
+  RefreshCw,
+  Package,
+  ExternalLink,
+  Pencil,
+  Check,
+  X,
+} from "lucide-react";
+import { updateShipment } from "./actions";
 
 type ShipmentStatus =
   | "pending"
@@ -58,6 +67,14 @@ export default function ShipmentsPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterTab>("all");
   const [checking, startChecking] = useTransition();
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<{
+    carrier: string;
+    status: ShipmentStatus;
+    delivered_at: string;
+  }>({ carrier: "usps", status: "pending", delivered_at: "" });
 
   async function fetchShipments() {
     const supabase = createClient();
@@ -112,6 +129,41 @@ export default function ShipmentsPage() {
     await fetchShipments();
   }
 
+  function startEdit(s: ShipmentRow) {
+    setEditError(null);
+    setEditingId(s.id);
+    setEditForm({
+      carrier: s.carrier,
+      status: s.status,
+      delivered_at: s.delivered_at
+        ? new Date(s.delivered_at).toISOString().split("T")[0]
+        : "",
+    });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditError(null);
+  }
+
+  async function handleSaveEdit(shipmentId: string) {
+    setEditError(null);
+    setSavingId(shipmentId);
+    try {
+      await updateShipment(shipmentId, {
+        carrier: editForm.carrier,
+        status: editForm.status,
+        delivered_at: editForm.delivered_at || null,
+      });
+      setEditingId(null);
+      await fetchShipments();
+    } catch (e: any) {
+      setEditError(e?.message ?? "Failed to update shipment.");
+    } finally {
+      setSavingId(null);
+    }
+  }
+
   const activeCount = shipments.filter((s) => s.status !== "delivered").length;
 
   return (
@@ -161,6 +213,12 @@ export default function ShipmentsPage() {
         ))}
       </div>
 
+      {editError && (
+        <div className="mt-4 rounded-md border border-red/20 bg-red/5 px-4 py-3 text-sm text-red">
+          {editError}
+        </div>
+      )}
+
       {/* Table */}
       <div className="mt-6 overflow-x-auto rounded-lg border border-navy/10 bg-white shadow-sm">
         {loading ? (
@@ -203,6 +261,9 @@ export default function ShipmentsPage() {
                     ? `${leadContact} (${leadCompany})`
                     : leadContact ?? leadCompany ?? "\u2014";
 
+                const isEditing = editingId === s.id;
+                const isSaving = savingId === s.id;
+
                 return (
                   <tr
                     key={s.id}
@@ -212,7 +273,24 @@ export default function ShipmentsPage() {
                       {s.tracking_number}
                     </td>
                     <td className="px-4 py-3 text-charcoal/70">
-                      {carrierLabels[s.carrier] ?? s.carrier}
+                      {isEditing ? (
+                        <select
+                          value={editForm.carrier}
+                          onChange={(e) =>
+                            setEditForm((f) => ({
+                              ...f,
+                              carrier: e.target.value,
+                            }))
+                          }
+                          className="rounded-md border border-navy/20 bg-white px-2 py-1 text-xs text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                        >
+                          <option value="usps">USPS</option>
+                          <option value="ups">UPS</option>
+                          <option value="fedex">FedEx</option>
+                        </select>
+                      ) : (
+                        carrierLabels[s.carrier] ?? s.carrier
+                      )}
                     </td>
                     <td className="px-4 py-3 text-charcoal/70">
                       {s.recipient_name ?? "\u2014"}
@@ -230,40 +308,109 @@ export default function ShipmentsPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <span
-                        className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                          statusColors[s.status] ?? "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {statusLabels[s.status] ?? s.status}
-                      </span>
+                      {isEditing ? (
+                        <select
+                          value={editForm.status}
+                          onChange={(e) =>
+                            setEditForm((f) => ({
+                              ...f,
+                              status: e.target.value as ShipmentStatus,
+                            }))
+                          }
+                          className="rounded-md border border-navy/20 bg-white px-2 py-1 text-xs text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                        >
+                          <option value="pending">Pending</option>
+                          <option value="in_transit">In Transit</option>
+                          <option value="out_for_delivery">
+                            Out for Delivery
+                          </option>
+                          <option value="delivered">Delivered</option>
+                          <option value="exception">Exception</option>
+                        </select>
+                      ) : (
+                        <span
+                          className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                            statusColors[s.status] ??
+                            "bg-gray-100 text-gray-800"
+                          }`}
+                        >
+                          {statusLabels[s.status] ?? s.status}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-charcoal/70">
                       {formatDate(s.shipped_at)}
                     </td>
                     <td className="px-4 py-3 text-charcoal/70">
-                      {formatDate(s.delivered_at)}
+                      {isEditing ? (
+                        <input
+                          type="date"
+                          value={editForm.delivered_at}
+                          onChange={(e) =>
+                            setEditForm((f) => ({
+                              ...f,
+                              delivered_at: e.target.value,
+                            }))
+                          }
+                          className="rounded-md border border-navy/20 bg-white px-2 py-1 text-xs text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                        />
+                      ) : (
+                        formatDate(s.delivered_at)
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        {s.status !== "delivered" && (
-                          <button
-                            onClick={() => handleCheckOne(s.id)}
-                            className="rounded p-1 text-steel hover:bg-navy/5 hover:text-navy"
-                            title="Check tracking status"
-                          >
-                            <RefreshCw className="h-3.5 w-3.5" />
-                          </button>
+                        {isEditing ? (
+                          <>
+                            <button
+                              onClick={() => handleSaveEdit(s.id)}
+                              disabled={isSaving}
+                              className="rounded p-1 text-green-700 hover:bg-green-50 disabled:opacity-50"
+                              title="Save"
+                              aria-label="Save"
+                            >
+                              <Check className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onClick={cancelEdit}
+                              disabled={isSaving}
+                              className="rounded p-1 text-steel hover:bg-navy/5 hover:text-navy disabled:opacity-50"
+                              title="Cancel"
+                              aria-label="Cancel"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => startEdit(s)}
+                              className="rounded p-1 text-steel hover:bg-navy/5 hover:text-navy"
+                              title="Edit shipment"
+                              aria-label="Edit shipment"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            {s.status !== "delivered" && (
+                              <button
+                                onClick={() => handleCheckOne(s.id)}
+                                className="rounded p-1 text-steel hover:bg-navy/5 hover:text-navy"
+                                title="Check tracking status"
+                              >
+                                <RefreshCw className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            <a
+                              href={`https://parcelsapp.com/en/tracking/${s.tracking_number}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="rounded p-1 text-steel hover:bg-navy/5 hover:text-navy"
+                              title="Track on web"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          </>
                         )}
-                        <a
-                          href={`https://parcelsapp.com/en/tracking/${s.tracking_number}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="rounded p-1 text-steel hover:bg-navy/5 hover:text-navy"
-                          title="Track on web"
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
                       </div>
                     </td>
                   </tr>

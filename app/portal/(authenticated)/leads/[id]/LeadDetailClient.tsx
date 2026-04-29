@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -10,8 +10,16 @@ import {
   Pencil,
   Package,
   FileText,
+  X,
+  Check,
 } from "lucide-react";
-import { updateLeadField, logActivity, setFollowUpDate } from "../actions";
+import {
+  updateLeadField,
+  logActivity,
+  setFollowUpDate,
+  updateContact,
+} from "../actions";
+import { updateShipment } from "../../shipments/actions";
 
 const STATUS_OPTIONS = [
   "new",
@@ -90,15 +98,45 @@ function formatDateTime(dateStr: string): string {
   });
 }
 
+const shipmentStatusColors: Record<string, string> = {
+  pending: "bg-gray-100 text-gray-800",
+  in_transit: "bg-blue-100 text-blue-800",
+  out_for_delivery: "bg-orange-100 text-orange-800",
+  delivered: "bg-green-100 text-green-800",
+  exception: "bg-red-100 text-red-800",
+};
+
+const shipmentStatusLabels: Record<string, string> = {
+  pending: "Pending",
+  in_transit: "In Transit",
+  out_for_delivery: "Out for Delivery",
+  delivered: "Delivered",
+  exception: "Exception",
+};
+
+const carrierLabels: Record<string, string> = {
+  usps: "USPS",
+  ups: "UPS",
+  fedex: "FedEx",
+};
+
 export default function LeadDetailClient({
   lead,
   activities,
+  shipments,
 }: {
   lead: any;
   activities: any[];
+  shipments: any[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [editingContact, setEditingContact] = useState(false);
+  const [contactError, setContactError] = useState<string | null>(null);
+  const [editingShipmentId, setEditingShipmentId] = useState<string | null>(
+    null
+  );
+  const [shipmentError, setShipmentError] = useState<string | null>(null);
 
   const contact = lead.contact;
   const company = lead.company;
@@ -142,6 +180,43 @@ export default function LeadDetailClient({
     startTransition(async () => {
       await logActivity(formData);
       router.refresh();
+    });
+  }
+
+  function handleSaveContact(formData: FormData) {
+    if (!contact) return;
+    setContactError(null);
+    startTransition(async () => {
+      try {
+        await updateContact(contact.id, lead.id, {
+          first_name: (formData.get("first_name") as string) ?? "",
+          last_name: (formData.get("last_name") as string) ?? "",
+          title: (formData.get("title") as string) || null,
+          email: (formData.get("email") as string) || null,
+          phone: (formData.get("phone") as string) || null,
+        });
+        setEditingContact(false);
+        router.refresh();
+      } catch (e: any) {
+        setContactError(e?.message ?? "Failed to update contact.");
+      }
+    });
+  }
+
+  function handleSaveShipment(shipmentId: string, formData: FormData) {
+    setShipmentError(null);
+    startTransition(async () => {
+      try {
+        await updateShipment(shipmentId, {
+          carrier: formData.get("carrier") as string,
+          status: formData.get("status") as string,
+          delivered_at: (formData.get("delivered_at") as string) || null,
+        });
+        setEditingShipmentId(null);
+        router.refresh();
+      } catch (e: any) {
+        setShipmentError(e?.message ?? "Failed to update shipment.");
+      }
     });
   }
 
@@ -218,53 +293,155 @@ export default function LeadDetailClient({
               <h2 className="text-sm font-semibold uppercase tracking-wider text-steel">
                 Contact
               </h2>
-              <Link
-                href={`/portal/leads/${lead.id}`}
-                className="text-steel hover:text-navy"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </Link>
+              {contact && !editingContact && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setContactError(null);
+                    setEditingContact(true);
+                  }}
+                  className="rounded p-1 text-steel hover:bg-navy/5 hover:text-navy"
+                  aria-label="Edit contact"
+                  title="Edit contact"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
 
             {contact ? (
-              <div className="mt-3 space-y-2">
-                <p className="text-lg font-semibold text-navy">
-                  {contact.first_name} {contact.last_name}
-                </p>
-                {contact.title && (
-                  <p className="text-sm text-charcoal/70">{contact.title}</p>
-                )}
-                {contact.email && (
-                  <p className="flex items-center gap-2 text-sm text-charcoal/70">
-                    <Mail className="h-3.5 w-3.5 text-steel" />
-                    <a
-                      href={`mailto:${contact.email}`}
-                      className="hover:text-navy hover:underline"
+              editingContact ? (
+                <form
+                  action={handleSaveContact}
+                  className="mt-3 space-y-3"
+                >
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-medium text-charcoal/60">
+                        First Name *
+                      </label>
+                      <input
+                        type="text"
+                        name="first_name"
+                        required
+                        defaultValue={contact.first_name ?? ""}
+                        className="mt-1 w-full rounded-md border border-navy/20 bg-white px-3 py-2 text-sm text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-charcoal/60">
+                        Last Name *
+                      </label>
+                      <input
+                        type="text"
+                        name="last_name"
+                        required
+                        defaultValue={contact.last_name ?? ""}
+                        className="mt-1 w-full rounded-md border border-navy/20 bg-white px-3 py-2 text-sm text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-charcoal/60">
+                      Title
+                    </label>
+                    <input
+                      type="text"
+                      name="title"
+                      defaultValue={contact.title ?? ""}
+                      className="mt-1 w-full rounded-md border border-navy/20 bg-white px-3 py-2 text-sm text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-charcoal/60">
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      name="email"
+                      defaultValue={contact.email ?? ""}
+                      className="mt-1 w-full rounded-md border border-navy/20 bg-white px-3 py-2 text-sm text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-charcoal/60">
+                      Phone
+                    </label>
+                    <input
+                      type="tel"
+                      name="phone"
+                      defaultValue={contact.phone ?? ""}
+                      className="mt-1 w-full rounded-md border border-navy/20 bg-white px-3 py-2 text-sm text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                    />
+                  </div>
+
+                  {contactError && (
+                    <p className="text-xs text-red">{contactError}</p>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="submit"
+                      disabled={isPending}
+                      className="inline-flex items-center gap-1 rounded-md bg-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-navy/90 disabled:opacity-50"
                     >
-                      {contact.email}
-                    </a>
-                  </p>
-                )}
-                {contact.phone && (
-                  <p className="flex items-center gap-2 text-sm text-charcoal/70">
-                    <Phone className="h-3.5 w-3.5 text-steel" />
-                    {contact.phone}
-                  </p>
-                )}
-                {contact.linkedin_url && (
-                  <p className="flex items-center gap-2 text-sm">
-                    <ExternalLink className="h-3.5 w-3.5 text-steel" />
-                    <a
-                      href={contact.linkedin_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline"
+                      <Check className="h-3.5 w-3.5" />
+                      {isPending ? "Saving…" : "Save"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingContact(false);
+                        setContactError(null);
+                      }}
+                      disabled={isPending}
+                      className="inline-flex items-center gap-1 rounded-md border border-navy/20 bg-white px-3 py-1.5 text-xs font-medium text-charcoal hover:bg-offwhite disabled:opacity-50"
                     >
-                      LinkedIn Profile
-                    </a>
+                      <X className="h-3.5 w-3.5" />
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  <p className="text-lg font-semibold text-navy">
+                    {contact.first_name} {contact.last_name}
                   </p>
-                )}
-              </div>
+                  {contact.title && (
+                    <p className="text-sm text-charcoal/70">{contact.title}</p>
+                  )}
+                  {contact.email && (
+                    <p className="flex items-center gap-2 text-sm text-charcoal/70">
+                      <Mail className="h-3.5 w-3.5 text-steel" />
+                      <a
+                        href={`mailto:${contact.email}`}
+                        className="hover:text-navy hover:underline"
+                      >
+                        {contact.email}
+                      </a>
+                    </p>
+                  )}
+                  {contact.phone && (
+                    <p className="flex items-center gap-2 text-sm text-charcoal/70">
+                      <Phone className="h-3.5 w-3.5 text-steel" />
+                      {contact.phone}
+                    </p>
+                  )}
+                  {contact.linkedin_url && (
+                    <p className="flex items-center gap-2 text-sm">
+                      <ExternalLink className="h-3.5 w-3.5 text-steel" />
+                      <a
+                        href={contact.linkedin_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline"
+                      >
+                        LinkedIn Profile
+                      </a>
+                    </p>
+                  )}
+                </div>
+              )
             ) : (
               <p className="mt-3 text-sm text-steel">No contact linked.</p>
             )}
@@ -378,15 +555,160 @@ export default function LeadDetailClient({
             </div>
           </div>
 
-          {/* Action buttons */}
-          <div>
-            <Link
-              href={`/portal/shipments/new?lead_id=${lead.id}`}
-              className="inline-flex items-center gap-2 rounded-md border border-navy/20 bg-white px-4 py-2 text-sm font-medium text-navy transition-colors hover:bg-navy hover:text-white"
-            >
-              <Package className="h-4 w-4" />
-              Add Shipment
-            </Link>
+          {/* Shipments card */}
+          <div className="rounded-lg border border-navy/10 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-steel">
+                Shipments
+              </h2>
+              <Link
+                href={`/portal/shipments/new?lead_id=${lead.id}`}
+                className="inline-flex items-center gap-1 rounded-md border border-navy/20 bg-white px-2.5 py-1 text-xs font-medium text-navy hover:bg-navy hover:text-white"
+              >
+                <Package className="h-3.5 w-3.5" />
+                Add
+              </Link>
+            </div>
+
+            {shipments.length === 0 ? (
+              <p className="mt-3 text-sm text-steel">No shipments yet.</p>
+            ) : (
+              <ul className="mt-3 divide-y divide-navy/5">
+                {shipments.map((s: any) => {
+                  const isEditing = editingShipmentId === s.id;
+                  return (
+                    <li key={s.id} className="py-3">
+                      {isEditing ? (
+                        <form
+                          action={(fd) => handleSaveShipment(s.id, fd)}
+                          className="space-y-2"
+                        >
+                          <p className="font-mono text-xs text-charcoal/70">
+                            {s.tracking_number}
+                          </p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[11px] font-medium text-charcoal/60">
+                                Carrier
+                              </label>
+                              <select
+                                name="carrier"
+                                defaultValue={s.carrier}
+                                className="mt-1 w-full rounded-md border border-navy/20 bg-white px-2 py-1.5 text-xs text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                              >
+                                <option value="usps">USPS</option>
+                                <option value="ups">UPS</option>
+                                <option value="fedex">FedEx</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-medium text-charcoal/60">
+                                Status
+                              </label>
+                              <select
+                                name="status"
+                                defaultValue={s.status}
+                                className="mt-1 w-full rounded-md border border-navy/20 bg-white px-2 py-1.5 text-xs text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                              >
+                                <option value="pending">Pending</option>
+                                <option value="in_transit">In Transit</option>
+                                <option value="out_for_delivery">
+                                  Out for Delivery
+                                </option>
+                                <option value="delivered">Delivered</option>
+                                <option value="exception">Exception</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-medium text-charcoal/60">
+                              Delivered Date
+                            </label>
+                            <input
+                              type="date"
+                              name="delivered_at"
+                              defaultValue={
+                                s.delivered_at
+                                  ? new Date(s.delivered_at)
+                                      .toISOString()
+                                      .split("T")[0]
+                                  : ""
+                              }
+                              className="mt-1 w-full rounded-md border border-navy/20 bg-white px-2 py-1.5 text-xs text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                            />
+                          </div>
+                          {shipmentError && editingShipmentId === s.id && (
+                            <p className="text-[11px] text-red">
+                              {shipmentError}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="submit"
+                              disabled={isPending}
+                              className="inline-flex items-center gap-1 rounded-md bg-navy px-2.5 py-1 text-xs font-semibold text-white hover:bg-navy/90 disabled:opacity-50"
+                            >
+                              <Check className="h-3 w-3" />
+                              {isPending ? "Saving…" : "Save"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingShipmentId(null);
+                                setShipmentError(null);
+                              }}
+                              disabled={isPending}
+                              className="inline-flex items-center gap-1 rounded-md border border-navy/20 bg-white px-2.5 py-1 text-xs font-medium text-charcoal hover:bg-offwhite disabled:opacity-50"
+                            >
+                              <X className="h-3 w-3" />
+                              Cancel
+                            </button>
+                          </div>
+                        </form>
+                      ) : (
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-mono text-xs text-charcoal">
+                              {s.tracking_number}
+                            </p>
+                            <div className="mt-1 flex flex-wrap items-center gap-2">
+                              <span className="text-xs text-charcoal/70">
+                                {carrierLabels[s.carrier] ?? s.carrier}
+                              </span>
+                              <span
+                                className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                  shipmentStatusColors[s.status] ??
+                                  "bg-gray-100 text-gray-800"
+                                }`}
+                              >
+                                {shipmentStatusLabels[s.status] ?? s.status}
+                              </span>
+                              {s.delivered_at && (
+                                <span className="text-[11px] text-charcoal/60">
+                                  Delivered {formatDate(s.delivered_at)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShipmentError(null);
+                              setEditingShipmentId(s.id);
+                            }}
+                            className="rounded p-1 text-steel hover:bg-navy/5 hover:text-navy"
+                            aria-label="Edit shipment"
+                            title="Edit shipment"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
         </div>
 

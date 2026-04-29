@@ -21,6 +21,40 @@ export async function updateLeadField(
   revalidatePath(`/portal/leads/${leadId}`);
 }
 
+// ── Update Contact ──
+
+export async function updateContact(
+  contactId: string,
+  leadId: string,
+  fields: {
+    first_name: string;
+    last_name: string;
+    title: string | null;
+    email: string | null;
+    phone: string | null;
+  }
+) {
+  const supabase = createClient();
+
+  if (!fields.first_name?.trim() || !fields.last_name?.trim()) {
+    throw new Error("First and last name are required");
+  }
+
+  const { error } = await supabase
+    .from("contacts")
+    .update({
+      first_name: fields.first_name.trim(),
+      last_name: fields.last_name.trim(),
+      title: fields.title?.trim() || null,
+      email: fields.email?.trim() || null,
+      phone: fields.phone?.trim() || null,
+    })
+    .eq("id", contactId);
+
+  if (error) throw new Error(error.message);
+  revalidatePath(`/portal/leads/${leadId}`);
+}
+
 // ── Log Activity ──
 
 export async function logActivity(formData: FormData) {
