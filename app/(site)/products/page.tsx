@@ -25,6 +25,7 @@ const products = [
     bestFor: "Sealant removal, gasket scraping, surface prep, detail work",
     size: "6 inches",
     queryParam: "6inch",
+    orderParam: "6in",
   },
   {
     name: '11" Phenolic Aviation Scraper (Long-Reach)',
@@ -41,6 +42,7 @@ const products = [
     bestFor: "C-checks, heavy maintenance, wing panels, fuselage work",
     size: "11 inches",
     queryParam: "11inch",
+    orderParam: "11in",
   },
 ];
 
@@ -133,9 +135,14 @@ export default function ProductsPage() {
                   </tbody>
                 </table>
 
-                <div className="mt-8">
+                <div className="mt-8 flex flex-wrap gap-3">
+                  <Button href={`/order?product=${product.orderParam}`}>
+                    Order Now
+                  </Button>
                   <Button
                     href={`/request-samples?product=${product.queryParam}`}
+                    variant="outline"
+                    className="border-navy text-navy hover:bg-navy hover:text-white"
                   >
                     Request Samples &rarr;
                   </Button>
@@ -208,7 +215,7 @@ export default function ProductsPage() {
               href="/request-samples"
               variant="outline"
               size="lg"
-              className="border-white text-white hover:bg-white hover:text-red"
+              className="bg-white border-white text-red hover:bg-offwhite hover:text-red focus-visible:ring-white"
             >
               Request Free Samples &rarr;
             </Button>

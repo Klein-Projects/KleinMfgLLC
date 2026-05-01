@@ -65,14 +65,22 @@ export default function Home() {
                 plastic. Trusted by aviation maintenance professionals.
               </p>
 
-              <div className="mt-8 flex flex-wrap items-center justify-center gap-4 lg:justify-start">
-                <Button href="/request-samples" size="lg">
+              <div className="mt-8 flex flex-wrap items-center justify-center gap-3 lg:flex-nowrap lg:justify-start">
+                <Button
+                  href="/request-samples"
+                  variant="outline"
+                  size="md"
+                  className="border-navy text-navy hover:bg-navy hover:text-white"
+                >
                   Request Free Samples &rarr;
+                </Button>
+                <Button href="/order" size="md">
+                  Order Now
                 </Button>
                 <Button
                   href="/products"
                   variant="outline"
-                  size="lg"
+                  size="md"
                   className="border-navy text-navy hover:bg-navy hover:text-white"
                 >
                   View Products
@@ -171,7 +179,7 @@ export default function Home() {
               href="/request-samples"
               variant="outline"
               size="lg"
-              className="border-white text-white hover:bg-white hover:text-red"
+              className="bg-white border-white text-red hover:bg-offwhite hover:text-red focus-visible:ring-white"
             >
               Request Free Samples &rarr;
             </Button>

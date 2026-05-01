@@ -137,7 +137,7 @@ export default function AboutPage() {
               href="/request-samples"
               variant="outline"
               size="lg"
-              className="border-white text-white hover:bg-white hover:text-red"
+              className="bg-white border-white text-red hover:bg-offwhite hover:text-red focus-visible:ring-white"
             >
               Request Free Samples &rarr;
             </Button>

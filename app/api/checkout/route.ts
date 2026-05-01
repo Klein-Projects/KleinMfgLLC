@@ -1,0 +1,206 @@
+import { NextResponse } from "next/server";
+import Stripe from "stripe";
+
+const PRICE_6_CENTS = 2100;
+const PRICE_11_CENTS = 2300;
+const CC_FEE_RATE = 0.0309;
+const MIN_TOTAL_QTY = 5;
+
+let stripeClient: Stripe | null = null;
+function getStripe(): Stripe {
+  if (stripeClient) return stripeClient;
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) {
+    throw new Error("STRIPE_SECRET_KEY is not set.");
+  }
+  stripeClient = new Stripe(key, { apiVersion: "2024-06-20" });
+  return stripeClient;
+}
+
+export async function POST(request: Request) {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  const {
+    customerName,
+    customerEmail,
+    customerPhone,
+    companyName,
+    addressLine1,
+    addressLine2,
+    city,
+    state,
+    zip,
+    qty6in,
+    qty11in,
+    shippingMethod,
+    shippingCost,
+    carrierType,
+    carrierAccountNumber,
+  } = body ?? {};
+
+  // ── Validate quantities ──
+  const q6 = Number.isInteger(qty6in) ? qty6in : parseInt(qty6in, 10);
+  const q11 = Number.isInteger(qty11in) ? qty11in : parseInt(qty11in, 10);
+
+  if (!Number.isFinite(q6) || q6 < 0 || !Number.isFinite(q11) || q11 < 0) {
+    return NextResponse.json(
+      { error: "Quantities must be non-negative integers." },
+      { status: 400 }
+    );
+  }
+  if (q6 + q11 < MIN_TOTAL_QTY) {
+    return NextResponse.json(
+      { error: `Minimum order is ${MIN_TOTAL_QTY} units total.` },
+      { status: 400 }
+    );
+  }
+
+  // ── Validate shipping method ──
+  if (shippingMethod !== "klein_calculated" && shippingMethod !== "collect") {
+    return NextResponse.json(
+      { error: "shippingMethod must be 'klein_calculated' or 'collect'." },
+      { status: 400 }
+    );
+  }
+
+  if (shippingMethod === "collect") {
+    if (
+      typeof carrierAccountNumber !== "string" ||
+      carrierAccountNumber.trim().length === 0
+    ) {
+      return NextResponse.json(
+        { error: "carrierAccountNumber is required for ship-collect orders." },
+        { status: 400 }
+      );
+    }
+    if (carrierType !== "UPS" && carrierType !== "FedEx") {
+      return NextResponse.json(
+        { error: "carrierType must be 'UPS' or 'FedEx' for ship-collect orders." },
+        { status: 400 }
+      );
+    }
+  }
+
+  // ── Validate customer email ──
+  if (
+    typeof customerEmail !== "string" ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim())
+  ) {
+    return NextResponse.json(
+      { error: "A valid customerEmail is required." },
+      { status: 400 }
+    );
+  }
+
+  // ── Server-side pricing ──
+  const subtotalCents = q6 * PRICE_6_CENTS + q11 * PRICE_11_CENTS;
+
+  let shippingCents = 0;
+  if (shippingMethod === "klein_calculated") {
+    const parsed = Number.isInteger(shippingCost)
+      ? shippingCost
+      : parseInt(shippingCost, 10);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return NextResponse.json(
+        { error: "shippingCost (in cents) is required for klein_calculated shipping." },
+        { status: 400 }
+      );
+    }
+    shippingCents = parsed;
+  }
+
+  const ccFeeCents = Math.round(
+    (subtotalCents + shippingCents) * CC_FEE_RATE
+  );
+
+  // ── Build Stripe line items ──
+  const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
+
+  if (q6 > 0) {
+    lineItems.push({
+      price_data: {
+        currency: "usd",
+        product_data: { name: '6" Phenolic Aviation Scraper' },
+        unit_amount: PRICE_6_CENTS,
+      },
+      quantity: q6,
+    });
+  }
+
+  if (q11 > 0) {
+    lineItems.push({
+      price_data: {
+        currency: "usd",
+        product_data: { name: '11" Phenolic Aviation Scraper' },
+        unit_amount: PRICE_11_CENTS,
+      },
+      quantity: q11,
+    });
+  }
+
+  if (shippingCents > 0) {
+    lineItems.push({
+      price_data: {
+        currency: "usd",
+        product_data: { name: "Shipping (UPS Ground)" },
+        unit_amount: shippingCents,
+      },
+      quantity: 1,
+    });
+  }
+
+  if (ccFeeCents > 0) {
+    lineItems.push({
+      price_data: {
+        currency: "usd",
+        product_data: { name: "Credit card processing fee (3.09%)" },
+        unit_amount: ccFeeCents,
+      },
+      quantity: 1,
+    });
+  }
+
+  // ── Metadata for the webhook (all values must be strings, max 500 chars each) ──
+  const metadata: Record<string, string> = {
+    qty6in: String(q6),
+    qty11in: String(q11),
+    shippingMethod,
+    shippingCost: String(shippingCents),
+    carrierType: typeof carrierType === "string" ? carrierType : "",
+    carrierAccountNumber:
+      typeof carrierAccountNumber === "string" ? carrierAccountNumber.trim() : "",
+    customerName: typeof customerName === "string" ? customerName.trim() : "",
+    customerPhone: typeof customerPhone === "string" ? customerPhone.trim() : "",
+    companyName: typeof companyName === "string" ? companyName.trim() : "",
+    addressLine1: typeof addressLine1 === "string" ? addressLine1.trim() : "",
+    addressLine2: typeof addressLine2 === "string" ? addressLine2.trim() : "",
+    city: typeof city === "string" ? city.trim() : "",
+    state: typeof state === "string" ? state : "",
+    zip: typeof zip === "string" ? zip.trim() : "",
+  };
+
+  // ── Create Stripe Checkout session ──
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "";
+
+  try {
+    const session = await getStripe().checkout.sessions.create({
+      mode: "payment",
+      customer_email: customerEmail.trim().toLowerCase(),
+      line_items: lineItems,
+      metadata,
+      success_url: `${baseUrl}/order/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseUrl}/order`,
+    });
+
+    return NextResponse.json({ url: session.url }, { status: 200 });
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Could not create Stripe session.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

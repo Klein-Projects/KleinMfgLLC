@@ -43,7 +43,15 @@ export default function SiteHeader() {
               {link.label}
             </Link>
           ))}
-          <Button href="/request-samples" size="sm">
+          <Button href="/order" size="sm">
+            Order Now
+          </Button>
+          <Button
+            href="/request-samples"
+            variant="outline"
+            size="sm"
+            className="border-navy text-navy hover:bg-navy hover:text-white"
+          >
             Request Samples
           </Button>
         </nav>
@@ -86,7 +94,15 @@ export default function SiteHeader() {
                 {link.label}
               </Link>
             ))}
-            <Button href="/request-samples" size="sm" className="mt-1 w-full">
+            <Button href="/order" size="sm" className="mt-1 w-full">
+              Order Now
+            </Button>
+            <Button
+              href="/request-samples"
+              variant="outline"
+              size="sm"
+              className="w-full border-navy text-navy hover:bg-navy hover:text-white"
+            >
               Request Samples
             </Button>
           </div>
