@@ -259,6 +259,76 @@ export async function POST(request: Request) {
             sendResult.data?.id ?? "(no id)"
           );
         }
+
+        // ── Step 5b: Send customer confirmation email ──
+        if (customerEmail) {
+          const customerSubject = `Klein Manufacturing — Order Confirmation`;
+
+          const customerHtml = `<!doctype html>
+<html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#2E2E2E;max-width:640px;margin:0 auto;padding:24px;">
+  <h2 style="margin:0 0 8px;color:#1C2E4A;">Thank you for your order${eName ? `, ${eName}` : ""}.</h2>
+  <p style="margin:0 0 16px;line-height:1.6;">
+    We've received your order and are getting it ready. We'll follow up by email with shipping details once it ships. If you have any questions, just reply to this email and it will reach our team.
+  </p>
+  <hr style="border:0;border-top:1px solid #ddd;"/>
+
+  <h3 style="margin:16px 0 4px;color:#1C2E4A;">YOUR ORDER</h3>
+  <p style="margin:0;line-height:1.6;">
+    6&quot; Scrapers: ${q6} &times; $21.00 = ${formatUSD(q6 * PRICE_6_CENTS)}<br/>
+    11&quot; Scrapers: ${q11} &times; $23.00 = ${formatUSD(q11 * PRICE_11_CENTS)}<br/>
+    <strong>Subtotal:</strong> ${formatUSD(subtotalCents)}
+  </p>
+  <hr style="border:0;border-top:1px solid #ddd;"/>
+
+  <h3 style="margin:16px 0 4px;color:#1C2E4A;">SHIP TO</h3>
+  <p style="margin:0;line-height:1.6;">
+    ${eAddr1}${addressLine2 ? `<br/>${eAddr2}` : ""}<br/>
+    ${eCity}, ${eState} ${eZip}
+  </p>
+  <hr style="border:0;border-top:1px solid #ddd;"/>
+
+  <h3 style="margin:16px 0 4px;color:#1C2E4A;">SHIPPING</h3>
+  <p style="margin:0;line-height:1.6;">
+    <strong>Method:</strong> ${isCollect ? "Ship Collect" : "Klein UPS Ground"}${
+      isCollect
+        ? `<br/><strong>Carrier:</strong> ${eCarrier || "—"}<br/><strong>Account #:</strong> ${eAccount || "—"}`
+        : ""
+    }<br/>
+    <strong>Shipping cost:</strong> ${formatUSD(shippingCents)}
+  </p>
+  <hr style="border:0;border-top:1px solid #ddd;"/>
+
+  <p style="margin:16px 0 0;line-height:1.6;">
+    Credit card processing fee (3.09%): ${formatUSD(ccFeeCents)}<br/>
+    <strong style="font-size:16px;color:#A52A2A;">Total charged: ${formatUSD(totalCents)}</strong>
+  </p>
+  <hr style="border:0;border-top:1px solid #ddd;"/>
+
+  <p style="margin:16px 0 0;line-height:1.6;color:#7A7A7A;font-size:13px;">
+    Klein Manufacturing, LLC<br/>
+    sales@kleinmfgllc.com
+  </p>
+</body></html>`;
+
+          const customerSendResult = await resend.emails.send({
+            from: "Klein Manufacturing <sales@kleinmfgllc.com>",
+            to: customerEmail,
+            subject: customerSubject,
+            html: customerHtml,
+          });
+
+          if (customerSendResult.error) {
+            console.error(
+              "Stripe webhook: Resend rejected customer email:",
+              customerSendResult.error
+            );
+          } else {
+            console.log(
+              "Stripe webhook: customer email sent",
+              customerSendResult.data?.id ?? "(no id)"
+            );
+          }
+        }
       }
     } catch (emailErr) {
       console.error("Stripe webhook: Resend email error:", emailErr);
