@@ -241,12 +241,24 @@ export async function POST(request: Request) {
   </p>
 </body></html>`;
 
-        await resend.emails.send({
-          from: "Klein Manufacturing <orders@kleinmfgllc.com>",
+        const sendResult = await resend.emails.send({
+          from: "Klein Manufacturing <sales@kleinmfgllc.com>",
           to: "sales@kleinmfgllc.com",
           subject,
           html,
         });
+
+        if (sendResult.error) {
+          console.error(
+            "Stripe webhook: Resend rejected email:",
+            sendResult.error
+          );
+        } else {
+          console.log(
+            "Stripe webhook: order email sent",
+            sendResult.data?.id ?? "(no id)"
+          );
+        }
       }
     } catch (emailErr) {
       console.error("Stripe webhook: Resend email error:", emailErr);
