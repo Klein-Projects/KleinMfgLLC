@@ -198,9 +198,17 @@ function OrderForm() {
     const errs = validate();
     setErrors(errs);
     if (Object.keys(errs).length > 0) {
-      setSubmitError(
-        errs.qty || "Please fix the errors above before continuing."
-      );
+      let message = "Please complete all required fields above before continuing.";
+      if (errs.qty) {
+        message = errs.qty;
+      } else if (errs.shipping) {
+        message = errs.shipping;
+      } else if (errs.accountNumber) {
+        message = "Please enter your shipping account number.";
+      } else if (errs.carrier) {
+        message = "Please select a shipping carrier.";
+      }
+      setSubmitError(message);
       return;
     }
 
@@ -704,8 +712,25 @@ function OrderForm() {
           </dl>
 
           {submitError && (
-            <div className="mt-4 rounded-md border border-red/30 bg-red/5 px-3 py-2 text-sm text-red">
-              {submitError}
+            <div
+              role="alert"
+              className="mt-4 flex items-start gap-2 rounded-md border-2 border-red bg-red/10 px-4 py-3 text-sm font-semibold text-red shadow-sm"
+            >
+              <svg
+                className="mt-0.5 h-5 w-5 flex-shrink-0"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              <span>{submitError}</span>
             </div>
           )}
 
