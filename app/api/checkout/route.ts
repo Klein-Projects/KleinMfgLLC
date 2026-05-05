@@ -13,7 +13,7 @@ function getStripe(): Stripe {
   if (!key) {
     throw new Error("STRIPE_SECRET_KEY is not set.");
   }
-  stripeClient = new Stripe(key, { apiVersion: "2024-06-20" });
+  stripeClient = new Stripe(key, { apiVersion: "2026-04-22.dahlia" });
   return stripeClient;
 }
 
@@ -119,7 +119,7 @@ export async function POST(request: Request) {
   );
 
   // ── Build Stripe line items ──
-  const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
+  const lineItems: NonNullable<Stripe.Checkout.SessionCreateParams["line_items"]> = [];
 
   if (q6 > 0) {
     lineItems.push({

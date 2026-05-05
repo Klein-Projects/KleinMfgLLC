@@ -8,7 +8,7 @@ function getStripe(): Stripe | null {
   if (stripeClient) return stripeClient;
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) return null;
-  stripeClient = new Stripe(key, { apiVersion: "2024-06-20" });
+  stripeClient = new Stripe(key, { apiVersion: "2026-04-22.dahlia" });
   return stripeClient;
 }
 
