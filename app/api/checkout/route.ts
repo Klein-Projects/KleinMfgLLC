@@ -4,7 +4,7 @@ import Stripe from "stripe";
 const PRICE_6_CENTS = 2100;
 const PRICE_11_CENTS = 2300;
 const CC_FEE_RATE = 0.0309;
-const MIN_TOTAL_QTY = 5;
+const MIN_SUBTOTAL_CENTS = 10000; // $100 minimum order
 
 let stripeClient: Stripe | null = null;
 function getStripe(): Stripe {
@@ -53,9 +53,9 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  if (q6 + q11 < MIN_TOTAL_QTY) {
+  if (q6 * PRICE_6_CENTS + q11 * PRICE_11_CENTS < MIN_SUBTOTAL_CENTS) {
     return NextResponse.json(
-      { error: `Minimum order is ${MIN_TOTAL_QTY} units total.` },
+      { error: `Minimum order is $${(MIN_SUBTOTAL_CENTS / 100).toFixed(0)}.` },
       { status: 400 }
     );
   }

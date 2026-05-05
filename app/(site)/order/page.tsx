@@ -7,8 +7,7 @@ import { useSearchParams } from "next/navigation";
 const PRICE_6_CENTS = 2100; // $21.00
 const PRICE_11_CENTS = 2300; // $23.00
 const CC_FEE_RATE = 0.0309; // 3.09%
-const QTY_OPTIONS = [0, 5, 10, 15, 20, 25, 50];
-const MIN_TOTAL_QTY = 5;
+const MIN_SUBTOTAL_CENTS = 10000; // $100 minimum order
 
 type ShippingMethod = "klein_calculated" | "collect";
 
@@ -91,7 +90,6 @@ function OrderForm() {
     setForm((f) => ({ ...f, [field]: value }));
   }
 
-  const totalQty = qty6 + qty11;
   const subtotalCents = qty6 * PRICE_6_CENTS + qty11 * PRICE_11_CENTS;
   const effectiveShippingCents =
     shippingMethod === "collect" ? 0 : shippingCents ?? 0;
@@ -105,7 +103,7 @@ function OrderForm() {
   const fetchShippingRate = useCallback(async () => {
     if (shippingMethod !== "klein_calculated") return;
     if (form.zip.length < 5) return;
-    if (totalQty < MIN_TOTAL_QTY) return;
+    if (subtotalCents < MIN_SUBTOTAL_CENTS) return;
 
     const myRequestId = ++rateRequestId.current;
     setShippingLoading(true);
@@ -138,14 +136,14 @@ function OrderForm() {
         setShippingLoading(false);
       }
     }
-  }, [shippingMethod, form.zip, qty6, qty11, totalQty]);
+  }, [shippingMethod, form.zip, qty6, qty11, subtotalCents]);
 
   // Re-fetch when qty changes (if Klein UPS and zip valid)
   useEffect(() => {
     if (
       shippingMethod === "klein_calculated" &&
       form.zip.length >= 5 &&
-      totalQty >= MIN_TOTAL_QTY
+      subtotalCents >= MIN_SUBTOTAL_CENTS
     ) {
       fetchShippingRate();
     } else if (shippingMethod === "klein_calculated") {
@@ -166,8 +164,8 @@ function OrderForm() {
 
   function validate(): Record<string, string> {
     const e: Record<string, string> = {};
-    if (totalQty < MIN_TOTAL_QTY) {
-      e.qty = `Minimum order is ${MIN_TOTAL_QTY} units total.`;
+    if (subtotalCents < MIN_SUBTOTAL_CENTS) {
+      e.qty = `Minimum order is $${(MIN_SUBTOTAL_CENTS / 100).toFixed(0)}.`;
     }
     if (!form.fullName.trim()) e.fullName = "Required.";
     if (!form.email.trim()) {
@@ -199,7 +197,12 @@ function OrderForm() {
     setSubmitError("");
     const errs = validate();
     setErrors(errs);
-    if (Object.keys(errs).length > 0) return;
+    if (Object.keys(errs).length > 0) {
+      setSubmitError(
+        errs.qty || "Please fix the errors above before continuing."
+      );
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -262,7 +265,7 @@ function OrderForm() {
         <section>
           <h2 className="text-xl font-bold text-navy">Products</h2>
           <p className="mt-1 text-sm text-steel">
-            Minimum order is {MIN_TOTAL_QTY} units total (any combination).
+            Minimum order is $100 (any combination).
           </p>
 
           <div className="mt-4 space-y-4">
@@ -277,18 +280,22 @@ function OrderForm() {
                 <label htmlFor="qty6" className="sr-only">
                   Quantity of 6 inch scrapers
                 </label>
-                <select
+                <input
                   id="qty6"
-                  value={qty6}
-                  onChange={(e) => setQty6(parseInt(e.target.value, 10))}
-                  className="rounded-md border border-navy/20 px-3 py-2 text-charcoal outline-none focus:border-navy focus:ring-2 focus:ring-navy/20"
-                >
-                  {QTY_OPTIONS.map((q) => (
-                    <option key={q} value={q}>
-                      {q}
-                    </option>
-                  ))}
-                </select>
+                  type="number"
+                  min="0"
+                  step="1"
+                  inputMode="numeric"
+                  value={qty6 === 0 ? "" : qty6}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "") return setQty6(0);
+                    const n = parseInt(v, 10);
+                    if (Number.isFinite(n) && n >= 0) setQty6(n);
+                  }}
+                  placeholder="0"
+                  className="w-24 rounded-md border border-navy/20 px-3 py-2 text-center text-charcoal outline-none focus:border-navy focus:ring-2 focus:ring-navy/20"
+                />
               </div>
             </div>
 
@@ -303,18 +310,22 @@ function OrderForm() {
                 <label htmlFor="qty11" className="sr-only">
                   Quantity of 11 inch scrapers
                 </label>
-                <select
+                <input
                   id="qty11"
-                  value={qty11}
-                  onChange={(e) => setQty11(parseInt(e.target.value, 10))}
-                  className="rounded-md border border-navy/20 px-3 py-2 text-charcoal outline-none focus:border-navy focus:ring-2 focus:ring-navy/20"
-                >
-                  {QTY_OPTIONS.map((q) => (
-                    <option key={q} value={q}>
-                      {q}
-                    </option>
-                  ))}
-                </select>
+                  type="number"
+                  min="0"
+                  step="1"
+                  inputMode="numeric"
+                  value={qty11 === 0 ? "" : qty11}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "") return setQty11(0);
+                    const n = parseInt(v, 10);
+                    if (Number.isFinite(n) && n >= 0) setQty11(n);
+                  }}
+                  placeholder="0"
+                  className="w-24 rounded-md border border-navy/20 px-3 py-2 text-center text-charcoal outline-none focus:border-navy focus:ring-2 focus:ring-navy/20"
+                />
               </div>
             </div>
           </div>
@@ -405,7 +416,7 @@ function OrderForm() {
                   if (
                     shippingMethod === "klein_calculated" &&
                     form.zip.length >= 5 &&
-                    totalQty >= MIN_TOTAL_QTY
+                    subtotalCents >= MIN_SUBTOTAL_CENTS
                   ) {
                     fetchShippingRate();
                   }
@@ -548,9 +559,9 @@ function OrderForm() {
                         Enter ZIP code above to see rate.
                       </span>
                     )}
-                    {!shippingLoading && shippingCents === null && totalQty < MIN_TOTAL_QTY && form.zip.length >= 5 && (
+                    {!shippingLoading && shippingCents === null && subtotalCents < MIN_SUBTOTAL_CENTS && form.zip.length >= 5 && (
                       <span className="text-steel">
-                        Add at least {MIN_TOTAL_QTY} units to see rate.
+                        Add items totaling at least $100 to see rate.
                       </span>
                     )}
                     {shippingError && (
