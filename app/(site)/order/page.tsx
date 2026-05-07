@@ -48,6 +48,18 @@ function calcCcFee(subtotalCents: number, shippingCents: number): number {
   return Math.round((subtotalCents + shippingCents) * CC_FEE_RATE);
 }
 
+type AppliedPromo = {
+  code: string;
+  label: string | null;
+  discount_type: "percent" | "amount";
+  discount_value_6: number;
+  discount_value_11: number;
+  list_price_6: number;
+  list_price_11: number;
+  discounted_price_6: number;
+  discounted_price_11: number;
+};
+
 function OrderForm() {
   // ── Quantities (seeded from ?product= query param) ──
   const searchParams = useSearchParams();
@@ -86,11 +98,23 @@ function OrderForm() {
   const [submitError, setSubmitError] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // ── Promo code ──
+  const [promoInput, setPromoInput] = useState("");
+  const [appliedPromo, setAppliedPromo] = useState<AppliedPromo | null>(null);
+  const [promoError, setPromoError] = useState("");
+  const [promoLoading, setPromoLoading] = useState(false);
+
   function updateForm(field: keyof typeof form, value: string) {
     setForm((f) => ({ ...f, [field]: value }));
   }
 
-  const subtotalCents = qty6 * PRICE_6_CENTS + qty11 * PRICE_11_CENTS;
+  // Effective unit prices (cents) — discounted when a promo is applied.
+  const unitPrice6 = appliedPromo?.discounted_price_6 ?? PRICE_6_CENTS;
+  const unitPrice11 = appliedPromo?.discounted_price_11 ?? PRICE_11_CENTS;
+
+  const subtotalCents = qty6 * unitPrice6 + qty11 * unitPrice11;
+  // Minimum-order check uses list prices so a promo can't drop you under $100.
+  const listSubtotalCents = qty6 * PRICE_6_CENTS + qty11 * PRICE_11_CENTS;
   const effectiveShippingCents =
     shippingMethod === "collect" ? 0 : shippingCents ?? 0;
   const ccFeeCents = calcCcFee(subtotalCents, effectiveShippingCents);
@@ -103,7 +127,7 @@ function OrderForm() {
   const fetchShippingRate = useCallback(async () => {
     if (shippingMethod !== "klein_calculated") return;
     if (form.zip.length < 5) return;
-    if (subtotalCents < MIN_SUBTOTAL_CENTS) return;
+    if (listSubtotalCents < MIN_SUBTOTAL_CENTS) return;
 
     const myRequestId = ++rateRequestId.current;
     setShippingLoading(true);
@@ -136,14 +160,14 @@ function OrderForm() {
         setShippingLoading(false);
       }
     }
-  }, [shippingMethod, form.zip, qty6, qty11, subtotalCents]);
+  }, [shippingMethod, form.zip, qty6, qty11, listSubtotalCents]);
 
   // Re-fetch when qty changes (if Klein UPS and zip valid)
   useEffect(() => {
     if (
       shippingMethod === "klein_calculated" &&
       form.zip.length >= 5 &&
-      subtotalCents >= MIN_SUBTOTAL_CENTS
+      listSubtotalCents >= MIN_SUBTOTAL_CENTS
     ) {
       fetchShippingRate();
     } else if (shippingMethod === "klein_calculated") {
@@ -162,9 +186,58 @@ function OrderForm() {
     }
   }, [shippingMethod]);
 
+  async function applyPromoCode() {
+    const code = promoInput.trim();
+    if (!code) {
+      setPromoError("Enter a promo code.");
+      return;
+    }
+    setPromoLoading(true);
+    setPromoError("");
+    try {
+      const res = await fetch("/api/promo/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code,
+          list_price_6: PRICE_6_CENTS,
+          list_price_11: PRICE_11_CENTS,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.valid) {
+        setAppliedPromo(null);
+        setPromoError(data.error || "Invalid or expired promo code.");
+        return;
+      }
+      setAppliedPromo({
+        code: data.code,
+        label: data.label ?? null,
+        discount_type: data.discount_type,
+        discount_value_6: Number(data.discount_value_6),
+        discount_value_11: Number(data.discount_value_11),
+        list_price_6: Number(data.list_price_6),
+        list_price_11: Number(data.list_price_11),
+        discounted_price_6: Number(data.discounted_price_6),
+        discounted_price_11: Number(data.discounted_price_11),
+      });
+    } catch {
+      setAppliedPromo(null);
+      setPromoError("Could not validate promo code. Try again.");
+    } finally {
+      setPromoLoading(false);
+    }
+  }
+
+  function removePromoCode() {
+    setAppliedPromo(null);
+    setPromoError("");
+    setPromoInput("");
+  }
+
   function validate(): Record<string, string> {
     const e: Record<string, string> = {};
-    if (subtotalCents < MIN_SUBTOTAL_CENTS) {
+    if (listSubtotalCents < MIN_SUBTOTAL_CENTS) {
       e.qty = `Minimum order is $${(MIN_SUBTOTAL_CENTS / 100).toFixed(0)}.`;
     }
     if (!form.fullName.trim()) e.fullName = "Required.";
@@ -235,6 +308,7 @@ function OrderForm() {
           carrierType: shippingMethod === "collect" ? carrier : "",
           carrierAccountNumber:
             shippingMethod === "collect" ? accountNumber.trim() : "",
+          promoCode: appliedPromo?.code ?? "",
         }),
       });
       const data = await res.json();
@@ -338,6 +412,108 @@ function OrderForm() {
             </div>
           </div>
           {fieldError(errors.qty)}
+
+          {/* Promo Code */}
+          <div className="mt-6 rounded-md border border-navy/20 bg-offwhite px-4 py-4">
+            <label htmlFor="promoCode" className={labelClasses}>
+              Promo Code
+            </label>
+            <div className="mt-1.5 flex flex-col gap-2 sm:flex-row">
+              <input
+                id="promoCode"
+                type="text"
+                value={promoInput}
+                onChange={(e) => {
+                  setPromoInput(e.target.value);
+                  if (promoError) setPromoError("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    if (!appliedPromo && !promoLoading) applyPromoCode();
+                  }
+                }}
+                placeholder="Enter code"
+                disabled={!!appliedPromo || promoLoading}
+                className={`flex-1 rounded-md border border-navy/20 px-4 py-2.5 text-charcoal outline-none transition focus:border-navy focus:ring-2 focus:ring-navy/20 disabled:bg-white/60 disabled:text-steel ${
+                  promoError ? errorInputClasses : ""
+                }`}
+              />
+              {appliedPromo ? (
+                <button
+                  type="button"
+                  onClick={removePromoCode}
+                  className="inline-flex items-center justify-center rounded-md border border-navy/20 bg-white px-4 py-2.5 text-sm font-semibold text-navy transition hover:border-navy hover:bg-navy/5"
+                >
+                  Remove
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={applyPromoCode}
+                  disabled={promoLoading || !promoInput.trim()}
+                  className="inline-flex items-center justify-center rounded-md bg-navy px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-navy/90 disabled:opacity-60"
+                >
+                  {promoLoading ? "Checking…" : "Apply"}
+                </button>
+              )}
+            </div>
+
+            {promoError && (
+              <p className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-red">
+                <svg
+                  className="h-4 w-4 flex-shrink-0"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="15" y1="9" x2="9" y2="15" />
+                  <line x1="9" y1="9" x2="15" y2="15" />
+                </svg>
+                {promoError}
+              </p>
+            )}
+
+            {appliedPromo && (
+              <div className="mt-3 space-y-1 text-sm">
+                <p className="flex items-center gap-1.5 font-semibold text-green-700">
+                  <svg
+                    className="h-4 w-4 flex-shrink-0"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  Promo code <span className="font-bold">{appliedPromo.code}</span> applied
+                  {appliedPromo.label ? ` — ${appliedPromo.label}` : ""}
+                </p>
+                <p className="text-charcoal">
+                  6&quot;:{" "}
+                  <span className="text-steel line-through">
+                    {formatUSD(appliedPromo.list_price_6)}
+                  </span>{" "}
+                  → <span className="font-semibold">{formatUSD(appliedPromo.discounted_price_6)}</span>
+                </p>
+                <p className="text-charcoal">
+                  11&quot;:{" "}
+                  <span className="text-steel line-through">
+                    {formatUSD(appliedPromo.list_price_11)}
+                  </span>{" "}
+                  → <span className="font-semibold">{formatUSD(appliedPromo.discounted_price_11)}</span>
+                </p>
+              </div>
+            )}
+          </div>
         </section>
 
         {/* Customer Info */}
@@ -657,17 +833,27 @@ function OrderForm() {
             {qty6 > 0 && (
               <div className="flex justify-between">
                 <dt>
-                  6&quot; × {qty6} @ $21.00
+                  6&quot; × {qty6} @ {formatUSD(unitPrice6)}
+                  {appliedPromo && (
+                    <span className="ml-1 text-xs text-steel line-through">
+                      {formatUSD(PRICE_6_CENTS)}
+                    </span>
+                  )}
                 </dt>
-                <dd>{formatUSD(qty6 * PRICE_6_CENTS)}</dd>
+                <dd>{formatUSD(qty6 * unitPrice6)}</dd>
               </div>
             )}
             {qty11 > 0 && (
               <div className="flex justify-between">
                 <dt>
-                  11&quot; × {qty11} @ $23.00
+                  11&quot; × {qty11} @ {formatUSD(unitPrice11)}
+                  {appliedPromo && (
+                    <span className="ml-1 text-xs text-steel line-through">
+                      {formatUSD(PRICE_11_CENTS)}
+                    </span>
+                  )}
                 </dt>
-                <dd>{formatUSD(qty11 * PRICE_11_CENTS)}</dd>
+                <dd>{formatUSD(qty11 * unitPrice11)}</dd>
               </div>
             )}
             {qty6 === 0 && qty11 === 0 && (
@@ -675,6 +861,13 @@ function OrderForm() {
             )}
 
             <div className="border-t border-navy/10 pt-2" />
+
+            {appliedPromo && (qty6 > 0 || qty11 > 0) && (
+              <div className="flex justify-between text-xs text-green-700">
+                <dt>Promo {appliedPromo.code}</dt>
+                <dd>−{formatUSD(listSubtotalCents - subtotalCents)}</dd>
+              </div>
+            )}
 
             <div className="flex justify-between">
               <dt>Subtotal</dt>
