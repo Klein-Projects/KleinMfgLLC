@@ -6,18 +6,21 @@ import { useRouter } from "next/navigation";
 import {
   Mail,
   Phone,
+  MapPin,
   ExternalLink,
   Pencil,
   Package,
   FileText,
   X,
   Check,
+  Trash2,
 } from "lucide-react";
 import {
   updateLeadField,
   logActivity,
   setFollowUpDate,
   updateContact,
+  deleteLead,
 } from "../actions";
 import { updateShipment } from "../../shipments/actions";
 
@@ -194,6 +197,9 @@ export default function LeadDetailClient({
           title: (formData.get("title") as string) || null,
           email: (formData.get("email") as string) || null,
           phone: (formData.get("phone") as string) || null,
+          address: (formData.get("address") as string) || null,
+          company_name: (formData.get("company_name") as string) || null,
+          company_id: company?.id ?? null,
         });
         setEditingContact(false);
         router.refresh();
@@ -240,13 +246,42 @@ export default function LeadDetailClient({
             <p className="text-sm text-steel">{company.name}</p>
           )}
         </div>
-        <span
-          className={`rounded-full px-3 py-1 text-sm font-medium ${
-            statusColors[lead.status] ?? "bg-gray-100 text-gray-800"
-          }`}
-        >
-          {statusLabels[lead.status] ?? lead.status}
-        </span>
+        <div className="flex items-center gap-3">
+          <span
+            className={`rounded-full px-3 py-1 text-sm font-medium ${
+              statusColors[lead.status] ?? "bg-gray-100 text-gray-800"
+            }`}
+          >
+            {statusLabels[lead.status] ?? lead.status}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              const name = contact
+                ? `${contact.first_name} ${contact.last_name}`
+                : "this lead";
+              if (
+                !window.confirm(
+                  `Delete ${name}? This permanently removes the lead and its activity history. This cannot be undone.`
+                )
+              ) {
+                return;
+              }
+              startTransition(async () => {
+                try {
+                  await deleteLead(lead.id);
+                } catch (e: any) {
+                  window.alert(e?.message ?? "Failed to delete lead.");
+                }
+              });
+            }}
+            disabled={isPending}
+            className="inline-flex items-center gap-1.5 rounded-md border border-red/30 px-3 py-1.5 text-sm font-medium text-red transition-colors hover:bg-red hover:text-white disabled:opacity-50"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete
+          </button>
+        </div>
       </div>
 
       {/* Sample request banner */}
@@ -343,6 +378,17 @@ export default function LeadDetailClient({
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-charcoal/60">
+                      Company
+                    </label>
+                    <input
+                      type="text"
+                      name="company_name"
+                      defaultValue={company?.name ?? ""}
+                      className="mt-1 w-full rounded-md border border-navy/20 bg-white px-3 py-2 text-sm text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-charcoal/60">
                       Title
                     </label>
                     <input
@@ -371,6 +417,17 @@ export default function LeadDetailClient({
                       type="tel"
                       name="phone"
                       defaultValue={contact.phone ?? ""}
+                      className="mt-1 w-full rounded-md border border-navy/20 bg-white px-3 py-2 text-sm text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-charcoal/60">
+                      Address
+                    </label>
+                    <input
+                      type="text"
+                      name="address"
+                      defaultValue={contact.address ?? ""}
                       className="mt-1 w-full rounded-md border border-navy/20 bg-white px-3 py-2 text-sm text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
                     />
                   </div>
@@ -425,6 +482,12 @@ export default function LeadDetailClient({
                     <p className="flex items-center gap-2 text-sm text-charcoal/70">
                       <Phone className="h-3.5 w-3.5 text-steel" />
                       {contact.phone}
+                    </p>
+                  )}
+                  {contact.address && (
+                    <p className="flex items-center gap-2 text-sm text-charcoal/70">
+                      <MapPin className="h-3.5 w-3.5 text-steel" />
+                      {contact.address}
                     </p>
                   )}
                   {contact.linkedin_url && (

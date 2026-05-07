@@ -32,12 +32,40 @@ export async function updateContact(
     title: string | null;
     email: string | null;
     phone: string | null;
+    address: string | null;
+    company_name: string | null;
+    company_id: string | null;
   }
 ) {
   const supabase = createClient();
 
   if (!fields.first_name?.trim() || !fields.last_name?.trim()) {
     throw new Error("First and last name are required");
+  }
+
+  const trimmedCompany = fields.company_name?.trim() || null;
+  let companyIdToLink: string | null = fields.company_id;
+
+  if (fields.company_id && trimmedCompany) {
+    const { error: companyErr } = await supabase
+      .from("companies")
+      .update({ name: trimmedCompany })
+      .eq("id", fields.company_id);
+    if (companyErr) throw new Error(companyErr.message);
+  } else if (!fields.company_id && trimmedCompany) {
+    const { data: newCompany, error: companyErr } = await supabase
+      .from("companies")
+      .insert({ name: trimmedCompany })
+      .select("id")
+      .single();
+    if (companyErr) throw new Error(companyErr.message);
+    companyIdToLink = newCompany.id;
+
+    const { error: leadErr } = await supabase
+      .from("leads")
+      .update({ company_id: companyIdToLink })
+      .eq("id", leadId);
+    if (leadErr) throw new Error(leadErr.message);
   }
 
   const { error } = await supabase
@@ -48,6 +76,10 @@ export async function updateContact(
       title: fields.title?.trim() || null,
       email: fields.email?.trim() || null,
       phone: fields.phone?.trim() || null,
+      address: fields.address?.trim() || null,
+      ...(companyIdToLink !== fields.company_id
+        ? { company_id: companyIdToLink }
+        : {}),
     })
     .eq("id", contactId);
 
@@ -192,6 +224,19 @@ export async function setFollowUpDate(leadId: string, date: string) {
   if (error) throw new Error(error.message);
   revalidatePath("/portal");
   revalidatePath(`/portal/leads/${leadId}`);
+}
+
+// ── Delete Lead ──
+
+export async function deleteLead(leadId: string) {
+  const supabase = createClient();
+
+  const { error } = await supabase.from("leads").delete().eq("id", leadId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/portal");
+  revalidatePath("/portal/leads");
+  redirect("/portal/leads");
 }
 
 // ── Create Lead ──

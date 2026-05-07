@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Plus, Search } from "lucide-react";
 
@@ -53,6 +53,7 @@ interface LeadRow {
 }
 
 export default function LeadsListPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const initialStatus = searchParams.get("status") ?? "all";
 
@@ -222,11 +223,13 @@ export default function LeadsListPage() {
                 return (
                   <tr
                     key={lead.id}
+                    onClick={() => router.push(`/portal/leads/${lead.id}`)}
                     className="cursor-pointer transition-colors hover:bg-offwhite"
                   >
                     <td className="px-4 py-3">
                       <Link
                         href={`/portal/leads/${lead.id}`}
+                        onClick={(e) => e.stopPropagation()}
                         className="font-medium text-navy hover:underline"
                       >
                         {contactName}
