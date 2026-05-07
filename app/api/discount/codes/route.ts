@@ -43,7 +43,8 @@ export async function GET() {
   const { data, error } = await supabase
     .from("discount_codes")
     .select(
-      "id, code, discount_type, discount_value_6, discount_value_11, is_active, label, created_at, " +
+      "id, code, discount_type, discount_value_6, discount_value_11, is_active, label, company_id, created_at, " +
+        "company:companies(id, name), " +
         "tiers:discount_code_tiers(min_qty, percent_off)"
     )
     .order("created_at", { ascending: false });
@@ -73,6 +74,10 @@ export async function POST(request: Request) {
   const discount_type = body?.discount_type as DiscountType;
   const label =
     typeof body?.label === "string" && body.label.trim() ? body.label.trim() : null;
+  const company_id =
+    typeof body?.company_id === "string" && body.company_id.trim()
+      ? body.company_id.trim()
+      : null;
 
   if (!code) {
     return NextResponse.json({ error: "Code is required." }, { status: 400 });
@@ -127,6 +132,7 @@ export async function POST(request: Request) {
       discount_value_6,
       discount_value_11,
       label,
+      company_id,
       is_active: true,
     })
     .select("id")

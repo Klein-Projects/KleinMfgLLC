@@ -8,23 +8,27 @@ import {
   Users,
   BookOpen,
   Truck,
+  Inbox,
   Settings,
   LogOut,
 } from "lucide-react";
 
 const navItems = [
-  { href: "/portal", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/portal/leads", label: "Leads", icon: Users },
-  { href: "/portal/prompts", label: "Prompt Library", icon: BookOpen },
-  { href: "/portal/shipments", label: "Shipments", icon: Truck },
-  { href: "/portal/settings", label: "Settings", icon: Settings },
+  { href: "/portal", label: "Dashboard", icon: LayoutDashboard, key: "dashboard" },
+  { href: "/portal/leads", label: "Leads", icon: Users, key: "leads" },
+  { href: "/portal/prompts", label: "Prompt Library", icon: BookOpen, key: "prompts" },
+  { href: "/portal/shipments", label: "Shipments", icon: Truck, key: "shipments" },
+  { href: "/portal/review", label: "Review Queue", icon: Inbox, key: "review" },
+  { href: "/portal/settings", label: "Settings", icon: Settings, key: "settings" },
 ];
 
 export default function PortalShell({
   userEmail,
+  reviewCount = 0,
   children,
 }: {
   userEmail: string;
+  reviewCount?: number;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -65,6 +69,7 @@ export default function PortalShell({
           <ul className="space-y-1">
             {navItems.map((item) => {
               const active = isActive(item.href);
+              const showBadge = item.key === "review" && reviewCount > 0;
               return (
                 <li key={item.href}>
                   <Link
@@ -76,7 +81,12 @@ export default function PortalShell({
                     }`}
                   >
                     <item.icon className="h-4 w-4 shrink-0" strokeWidth={2} />
-                    {item.label}
+                    <span className="flex-1">{item.label}</span>
+                    {showBadge && (
+                      <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red px-1.5 text-xs font-bold text-white">
+                        {reviewCount}
+                      </span>
+                    )}
                   </Link>
                 </li>
               );

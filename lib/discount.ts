@@ -15,6 +15,7 @@ export type DiscountRow = {
   discount_value_11: number | null;
   is_active: boolean;
   label: string | null;
+  company_id: string | null;
   tiers: DiscountTier[];
 };
 
@@ -34,7 +35,7 @@ export async function lookupActiveDiscount(code: string): Promise<DiscountRow | 
   const { data, error } = await supabase
     .from("discount_codes")
     .select(
-      "id, code, discount_type, discount_value_6, discount_value_11, is_active, label, " +
+      "id, code, discount_type, discount_value_6, discount_value_11, is_active, label, company_id, " +
         "tiers:discount_code_tiers(min_qty, percent_off)"
     )
     .ilike("code", trimmed)

@@ -2,9 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { Plus, Pencil, Trash2, Check, X, Power } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 type DiscountType = "percent" | "amount" | "tiered_percent";
 type Tier = { min_qty: number; percent_off: number };
+
+type Company = { id: string; name: string };
 
 type Code = {
   id: string;
@@ -14,6 +17,8 @@ type Code = {
   discount_value_11: number | null;
   is_active: boolean;
   label: string | null;
+  company_id: string | null;
+  company: { id: string; name: string } | null;
   created_at: string;
   tiers: Tier[];
 };
@@ -35,10 +40,22 @@ function formatDiscountValue(c: Code, side: "6" | "11"): string {
 
 export default function SettingsPage() {
   const [codes, setCodes] = useState<Code[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("companies")
+      .select("id, name")
+      .order("name")
+      .then(({ data }) => {
+        setCompanies((data as Company[]) ?? []);
+      });
+  }, []);
 
   async function load() {
     setLoading(true);
@@ -126,6 +143,7 @@ export default function SettingsPage() {
       {showCreate && (
         <CodeFormCard
           mode="create"
+          companies={companies}
           onCancel={() => setShowCreate(false)}
           onSaved={() => {
             setShowCreate(false);
@@ -151,6 +169,7 @@ export default function SettingsPage() {
                 <th className="px-4 py-3">6&quot; Discount</th>
                 <th className="px-4 py-3">11&quot; Discount</th>
                 <th className="px-4 py-3">Label</th>
+                <th className="px-4 py-3">Company</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
@@ -161,10 +180,11 @@ export default function SettingsPage() {
                 return (
                   <tr key={c.id} className="bg-white align-top">
                     {isEditing ? (
-                      <td colSpan={7} className="p-0">
+                      <td colSpan={8} className="p-0">
                         <CodeFormCard
                           mode="edit"
                           existing={c}
+                          companies={companies}
                           onCancel={() => setEditingId(null)}
                           onSaved={() => {
                             setEditingId(null);
@@ -198,6 +218,9 @@ export default function SettingsPage() {
                         </td>
                         <td className="px-4 py-3 text-charcoal">
                           {c.label ?? <span className="text-steel">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-charcoal">
+                          {c.company?.name ?? <span className="text-steel">—</span>}
                         </td>
                         <td className="px-4 py-3">
                           {c.is_active ? (
@@ -261,12 +284,14 @@ export default function SettingsPage() {
 function CodeFormCard({
   mode,
   existing,
+  companies,
   onCancel,
   onSaved,
   onError,
 }: {
   mode: "create" | "edit";
   existing?: Code;
+  companies: Company[];
   onCancel: () => void;
   onSaved: () => void;
   onError: (msg: string) => void;
@@ -282,6 +307,7 @@ function CodeFormCard({
     existing?.discount_value_11 != null ? String(existing.discount_value_11) : ""
   );
   const [label, setLabel] = useState(existing?.label ?? "");
+  const [companyId, setCompanyId] = useState<string>(existing?.company_id ?? "");
   const [tiers, setTiers] = useState<Tier[]>(
     existing?.tiers && existing.tiers.length > 0
       ? [...existing.tiers].sort((a, b) => a.min_qty - b.min_qty)
@@ -327,6 +353,7 @@ function CodeFormCard({
         code: code.trim(),
         discount_type: type,
         label: label.trim() || null,
+        company_id: companyId || null,
       };
       if (type === "tiered_percent") {
         body.tiers = tiers.map((t) => ({
@@ -440,7 +467,7 @@ function CodeFormCard({
             </div>
           </>
         )}
-        <div className={type === "tiered_percent" ? "lg:col-span-2" : "lg:col-span-4"}>
+        <div className={type === "tiered_percent" ? "lg:col-span-2" : "lg:col-span-2"}>
           <label className={labelClasses}>Label (optional)</label>
           <input
             type="text"
@@ -449,6 +476,25 @@ function CodeFormCard({
             placeholder="Acme Aerospace volume pricing"
             className={`${inputClasses} mt-1`}
           />
+        </div>
+        <div className={type === "tiered_percent" ? "lg:col-span-2" : "lg:col-span-2"}>
+          <label className={labelClasses}>Company (optional)</label>
+          <select
+            value={companyId}
+            onChange={(e) => setCompanyId(e.target.value)}
+            className={`${inputClasses} mt-1`}
+          >
+            <option value="">— None —</option>
+            {companies.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-steel">
+            Tying a code to a company auto-attributes web orders to that
+            account&apos;s lead.
+          </p>
         </div>
       </div>
 
