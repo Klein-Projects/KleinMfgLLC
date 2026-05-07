@@ -48,17 +48,75 @@ function calcCcFee(subtotalCents: number, shippingCents: number): number {
   return Math.round((subtotalCents + shippingCents) * CC_FEE_RATE);
 }
 
-type AppliedPromo = {
+type DiscountTier = { min_qty: number; percent_off: number };
+
+type AppliedDiscount = {
   code: string;
   label: string | null;
-  discount_type: "percent" | "amount";
-  discount_value_6: number;
-  discount_value_11: number;
+  discount_type: "percent" | "amount" | "tiered_percent";
+  discount_value_6: number | null;
+  discount_value_11: number | null;
+  tiers: DiscountTier[];
   list_price_6: number;
   list_price_11: number;
-  discounted_price_6: number;
-  discounted_price_11: number;
 };
+
+function resolveDiscount(
+  d: AppliedDiscount,
+  qty6: number,
+  qty11: number
+): {
+  unit6: number;
+  unit11: number;
+  activeTier: DiscountTier | null;
+  nextTier: DiscountTier | null;
+} {
+  const list6 = d.list_price_6;
+  const list11 = d.list_price_11;
+
+  if (d.discount_type === "tiered_percent") {
+    const total = (qty6 || 0) + (qty11 || 0);
+    const sorted = [...d.tiers].sort((a, b) => a.min_qty - b.min_qty);
+    let active: DiscountTier | null = null;
+    for (const t of sorted) {
+      if (total >= t.min_qty) active = t;
+      else break;
+    }
+    const nextTier =
+      sorted.find((t) => !active || t.min_qty > active.min_qty) ?? null;
+    if (!active) {
+      return { unit6: list6, unit11: list11, activeTier: null, nextTier };
+    }
+    const pct = active.percent_off / 100;
+    return {
+      unit6: Math.max(0, Math.round(list6 * (1 - pct))),
+      unit11: Math.max(0, Math.round(list11 * (1 - pct))),
+      activeTier: active,
+      nextTier,
+    };
+  }
+
+  if (d.discount_type === "percent") {
+    const v6 = (d.discount_value_6 ?? 0) / 100;
+    const v11 = (d.discount_value_11 ?? 0) / 100;
+    return {
+      unit6: Math.max(0, Math.round(list6 * (1 - v6))),
+      unit11: Math.max(0, Math.round(list11 * (1 - v11))),
+      activeTier: null,
+      nextTier: null,
+    };
+  }
+
+  // amount
+  const off6 = Math.round((d.discount_value_6 ?? 0) * 100);
+  const off11 = Math.round((d.discount_value_11 ?? 0) * 100);
+  return {
+    unit6: Math.max(0, list6 - off6),
+    unit11: Math.max(0, list11 - off11),
+    activeTier: null,
+    nextTier: null,
+  };
+}
 
 function OrderForm() {
   // ── Quantities (seeded from ?product= query param) ──
@@ -98,22 +156,26 @@ function OrderForm() {
   const [submitError, setSubmitError] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // ── Promo code ──
-  const [promoInput, setPromoInput] = useState("");
-  const [appliedPromo, setAppliedPromo] = useState<AppliedPromo | null>(null);
-  const [promoError, setPromoError] = useState("");
-  const [promoLoading, setPromoLoading] = useState(false);
+  // ── Discount code ──
+  const [discountInput, setDiscountInput] = useState("");
+  const [appliedDiscount, setAppliedDiscount] = useState<AppliedDiscount | null>(null);
+  const [discountError, setDiscountError] = useState("");
+  const [discountLoading, setDiscountLoading] = useState(false);
 
   function updateForm(field: keyof typeof form, value: string) {
     setForm((f) => ({ ...f, [field]: value }));
   }
 
-  // Effective unit prices (cents) — discounted when a promo is applied.
-  const unitPrice6 = appliedPromo?.discounted_price_6 ?? PRICE_6_CENTS;
-  const unitPrice11 = appliedPromo?.discounted_price_11 ?? PRICE_11_CENTS;
+  // Resolve effective unit prices using the applied discount (re-evaluated as qty changes
+  // so tiered codes recompute when the customer adjusts quantities).
+  const resolved = appliedDiscount
+    ? resolveDiscount(appliedDiscount, qty6, qty11)
+    : null;
+  const unitPrice6 = resolved?.unit6 ?? PRICE_6_CENTS;
+  const unitPrice11 = resolved?.unit11 ?? PRICE_11_CENTS;
 
   const subtotalCents = qty6 * unitPrice6 + qty11 * unitPrice11;
-  // Minimum-order check uses list prices so a promo can't drop you under $100.
+  // Minimum-order check uses list prices so a discount can't drop you under $100.
   const listSubtotalCents = qty6 * PRICE_6_CENTS + qty11 * PRICE_11_CENTS;
   const effectiveShippingCents =
     shippingMethod === "collect" ? 0 : shippingCents ?? 0;
@@ -186,53 +248,61 @@ function OrderForm() {
     }
   }, [shippingMethod]);
 
-  async function applyPromoCode() {
-    const code = promoInput.trim();
+  async function applyDiscountCode() {
+    const code = discountInput.trim();
     if (!code) {
-      setPromoError("Enter a promo code.");
+      setDiscountError("Enter a discount code.");
       return;
     }
-    setPromoLoading(true);
-    setPromoError("");
+    setDiscountLoading(true);
+    setDiscountError("");
     try {
-      const res = await fetch("/api/promo/validate", {
+      const res = await fetch("/api/discount/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           code,
+          qty6,
+          qty11,
           list_price_6: PRICE_6_CENTS,
           list_price_11: PRICE_11_CENTS,
         }),
       });
       const data = await res.json();
       if (!res.ok || !data.valid) {
-        setAppliedPromo(null);
-        setPromoError(data.error || "Invalid or expired promo code.");
+        setAppliedDiscount(null);
+        setDiscountError(data.error || "Invalid or expired discount code.");
         return;
       }
-      setAppliedPromo({
+      setAppliedDiscount({
         code: data.code,
         label: data.label ?? null,
         discount_type: data.discount_type,
-        discount_value_6: Number(data.discount_value_6),
-        discount_value_11: Number(data.discount_value_11),
+        discount_value_6:
+          data.discount_value_6 == null ? null : Number(data.discount_value_6),
+        discount_value_11:
+          data.discount_value_11 == null ? null : Number(data.discount_value_11),
+        tiers: Array.isArray(data.tiers)
+          ? data.tiers.map((t: any) => ({
+              min_qty: Number(t.min_qty),
+              percent_off: Number(t.percent_off),
+            }))
+          : [],
         list_price_6: Number(data.list_price_6),
         list_price_11: Number(data.list_price_11),
-        discounted_price_6: Number(data.discounted_price_6),
-        discounted_price_11: Number(data.discounted_price_11),
       });
     } catch {
-      setAppliedPromo(null);
-      setPromoError("Could not validate promo code. Try again.");
+      setAppliedDiscount(null);
+      setDiscountError("Could not validate discount code. Try again.");
     } finally {
-      setPromoLoading(false);
+      setDiscountLoading(false);
     }
   }
 
-  function removePromoCode() {
-    setAppliedPromo(null);
-    setPromoError("");
-    setPromoInput("");
+  function removeDiscountCode() {
+    setAppliedDiscount(null);
+    setDiscountError("");
+    setDiscountInput("");
   }
 
   function validate(): Record<string, string> {
@@ -308,7 +378,7 @@ function OrderForm() {
           carrierType: shippingMethod === "collect" ? carrier : "",
           carrierAccountNumber:
             shippingMethod === "collect" ? accountNumber.trim() : "",
-          promoCode: appliedPromo?.code ?? "",
+          discountCode: appliedDiscount?.code ?? "",
         }),
       });
       const data = await res.json();
@@ -413,36 +483,36 @@ function OrderForm() {
           </div>
           {fieldError(errors.qty)}
 
-          {/* Promo Code */}
+          {/* Discount Code */}
           <div className="mt-6 rounded-md border border-navy/20 bg-offwhite px-4 py-4">
-            <label htmlFor="promoCode" className={labelClasses}>
-              Promo Code
+            <label htmlFor="discountCode" className={labelClasses}>
+              Discount Code
             </label>
             <div className="mt-1.5 flex flex-col gap-2 sm:flex-row">
               <input
-                id="promoCode"
+                id="discountCode"
                 type="text"
-                value={promoInput}
+                value={discountInput}
                 onChange={(e) => {
-                  setPromoInput(e.target.value);
-                  if (promoError) setPromoError("");
+                  setDiscountInput(e.target.value);
+                  if (discountError) setDiscountError("");
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
-                    if (!appliedPromo && !promoLoading) applyPromoCode();
+                    if (!appliedDiscount && !discountLoading) applyDiscountCode();
                   }
                 }}
                 placeholder="Enter code"
-                disabled={!!appliedPromo || promoLoading}
+                disabled={!!appliedDiscount || discountLoading}
                 className={`flex-1 rounded-md border border-navy/20 px-4 py-2.5 text-charcoal outline-none transition focus:border-navy focus:ring-2 focus:ring-navy/20 disabled:bg-white/60 disabled:text-steel ${
-                  promoError ? errorInputClasses : ""
+                  discountError ? errorInputClasses : ""
                 }`}
               />
-              {appliedPromo ? (
+              {appliedDiscount ? (
                 <button
                   type="button"
-                  onClick={removePromoCode}
+                  onClick={removeDiscountCode}
                   className="inline-flex items-center justify-center rounded-md border border-navy/20 bg-white px-4 py-2.5 text-sm font-semibold text-navy transition hover:border-navy hover:bg-navy/5"
                 >
                   Remove
@@ -450,16 +520,16 @@ function OrderForm() {
               ) : (
                 <button
                   type="button"
-                  onClick={applyPromoCode}
-                  disabled={promoLoading || !promoInput.trim()}
+                  onClick={applyDiscountCode}
+                  disabled={discountLoading || !discountInput.trim()}
                   className="inline-flex items-center justify-center rounded-md bg-navy px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-navy/90 disabled:opacity-60"
                 >
-                  {promoLoading ? "Checking…" : "Apply"}
+                  {discountLoading ? "Checking…" : "Apply"}
                 </button>
               )}
             </div>
 
-            {promoError && (
+            {discountError && (
               <p className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-red">
                 <svg
                   className="h-4 w-4 flex-shrink-0"
@@ -475,12 +545,12 @@ function OrderForm() {
                   <line x1="15" y1="9" x2="9" y2="15" />
                   <line x1="9" y1="9" x2="15" y2="15" />
                 </svg>
-                {promoError}
+                {discountError}
               </p>
             )}
 
-            {appliedPromo && (
-              <div className="mt-3 space-y-1 text-sm">
+            {appliedDiscount && resolved && (
+              <div className="mt-3 space-y-2 text-sm">
                 <p className="flex items-center gap-1.5 font-semibold text-green-700">
                   <svg
                     className="h-4 w-4 flex-shrink-0"
@@ -494,23 +564,76 @@ function OrderForm() {
                   >
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
-                  Promo code <span className="font-bold">{appliedPromo.code}</span> applied
-                  {appliedPromo.label ? ` — ${appliedPromo.label}` : ""}
+                  Discount code <span className="font-bold">{appliedDiscount.code}</span> applied
+                  {appliedDiscount.label ? ` — ${appliedDiscount.label}` : ""}
                 </p>
-                <p className="text-charcoal">
-                  6&quot;:{" "}
-                  <span className="text-steel line-through">
-                    {formatUSD(appliedPromo.list_price_6)}
-                  </span>{" "}
-                  → <span className="font-semibold">{formatUSD(appliedPromo.discounted_price_6)}</span>
-                </p>
-                <p className="text-charcoal">
-                  11&quot;:{" "}
-                  <span className="text-steel line-through">
-                    {formatUSD(appliedPromo.list_price_11)}
-                  </span>{" "}
-                  → <span className="font-semibold">{formatUSD(appliedPromo.discounted_price_11)}</span>
-                </p>
+
+                {appliedDiscount.discount_type === "tiered_percent" && (
+                  <div className="rounded-md border border-navy/10 bg-white px-3 py-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-steel">
+                      Volume tiers
+                    </p>
+                    <ul className="mt-1 space-y-0.5">
+                      {appliedDiscount.tiers.map((t) => {
+                        const isActive =
+                          resolved.activeTier?.min_qty === t.min_qty;
+                        return (
+                          <li
+                            key={t.min_qty}
+                            className={
+                              isActive
+                                ? "font-semibold text-green-700"
+                                : "text-charcoal"
+                            }
+                          >
+                            {isActive ? "✓ " : "• "}
+                            {t.min_qty}+ parts: {t.percent_off}% off
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    {resolved.nextTier && (
+                      <p className="mt-1 text-xs text-steel">
+                        Add{" "}
+                        {Math.max(
+                          1,
+                          resolved.nextTier.min_qty - (qty6 + qty11)
+                        )}{" "}
+                        more part(s) to unlock {resolved.nextTier.percent_off}% off.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {resolved.activeTier ||
+                appliedDiscount.discount_type !== "tiered_percent" ? (
+                  <>
+                    <p className="text-charcoal">
+                      6&quot;:{" "}
+                      <span className="text-steel line-through">
+                        {formatUSD(appliedDiscount.list_price_6)}
+                      </span>{" "}
+                      →{" "}
+                      <span className="font-semibold">
+                        {formatUSD(resolved.unit6)}
+                      </span>
+                    </p>
+                    <p className="text-charcoal">
+                      11&quot;:{" "}
+                      <span className="text-steel line-through">
+                        {formatUSD(appliedDiscount.list_price_11)}
+                      </span>{" "}
+                      →{" "}
+                      <span className="font-semibold">
+                        {formatUSD(resolved.unit11)}
+                      </span>
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-steel">
+                    No discount yet — add parts to qualify for a tier.
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -834,7 +957,7 @@ function OrderForm() {
               <div className="flex justify-between">
                 <dt>
                   6&quot; × {qty6} @ {formatUSD(unitPrice6)}
-                  {appliedPromo && (
+                  {unitPrice6 < PRICE_6_CENTS && (
                     <span className="ml-1 text-xs text-steel line-through">
                       {formatUSD(PRICE_6_CENTS)}
                     </span>
@@ -847,7 +970,7 @@ function OrderForm() {
               <div className="flex justify-between">
                 <dt>
                   11&quot; × {qty11} @ {formatUSD(unitPrice11)}
-                  {appliedPromo && (
+                  {unitPrice11 < PRICE_11_CENTS && (
                     <span className="ml-1 text-xs text-steel line-through">
                       {formatUSD(PRICE_11_CENTS)}
                     </span>
@@ -862,12 +985,14 @@ function OrderForm() {
 
             <div className="border-t border-navy/10 pt-2" />
 
-            {appliedPromo && (qty6 > 0 || qty11 > 0) && (
-              <div className="flex justify-between text-xs text-green-700">
-                <dt>Promo {appliedPromo.code}</dt>
-                <dd>−{formatUSD(listSubtotalCents - subtotalCents)}</dd>
-              </div>
-            )}
+            {appliedDiscount &&
+              (qty6 > 0 || qty11 > 0) &&
+              listSubtotalCents > subtotalCents && (
+                <div className="flex justify-between text-xs text-green-700">
+                  <dt>Discount {appliedDiscount.code}</dt>
+                  <dd>−{formatUSD(listSubtotalCents - subtotalCents)}</dd>
+                </div>
+              )}
 
             <div className="flex justify-between">
               <dt>Subtotal</dt>

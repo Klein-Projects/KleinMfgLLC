@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
-import { applyDiscount, lookupActivePromo } from "@/lib/promo";
+import { lookupActiveDiscount, resolveUnitPrices } from "@/lib/discount";
 
 const PRICE_6_CENTS = 2100;
 const PRICE_11_CENTS = 2300;
@@ -85,7 +85,7 @@ export async function POST(request: Request) {
   const zip = (md.zip ?? "").trim();
   const carrierType = (md.carrierType ?? "").trim();
   const carrierAccountNumber = (md.carrierAccountNumber ?? "").trim();
-  const promoCode = (md.promoCode ?? "").trim();
+  const discountCodeMd = (md.discountCode ?? "").trim();
 
   const q6 = parseInt(md.qty6in ?? "0", 10) || 0;
   const q11 = parseInt(md.qty11in ?? "0", 10) || 0;
@@ -102,25 +102,27 @@ export async function POST(request: Request) {
     typeof session.payment_intent === "string" ? session.payment_intent : null;
 
   // ── Step 3: Recalculate totals server-side ──
-  // Re-fetch the promo from DB so the webhook never trusts Stripe metadata for prices.
+  // Re-fetch the discount from DB so the webhook never trusts Stripe metadata for prices.
   let unit6Cents = PRICE_6_CENTS;
   let unit11Cents = PRICE_11_CENTS;
-  let appliedPromoCode: string | null = null;
+  let appliedDiscountCode: string | null = null;
 
-  if (promoCode) {
+  if (discountCodeMd) {
     try {
-      const promo = await lookupActivePromo(promoCode);
-      if (promo) {
-        unit6Cents = applyDiscount(PRICE_6_CENTS, promo.discount_type, promo.discount_value_6);
-        unit11Cents = applyDiscount(PRICE_11_CENTS, promo.discount_type, promo.discount_value_11);
-        appliedPromoCode = promo.code;
+      const row = await lookupActiveDiscount(discountCodeMd);
+      if (row) {
+        const resolved = resolveUnitPrices(row, PRICE_6_CENTS, PRICE_11_CENTS, q6, q11);
+        unit6Cents = resolved.unit6;
+        unit11Cents = resolved.unit11;
+        const anyDiscount = unit6Cents < PRICE_6_CENTS || unit11Cents < PRICE_11_CENTS;
+        if (anyDiscount) appliedDiscountCode = row.code;
       } else {
         console.warn(
-          `Stripe webhook: promo "${promoCode}" not found/active at fulfillment; recording at list price.`
+          `Stripe webhook: discount "${discountCodeMd}" not found/active at fulfillment; recording at list price.`
         );
       }
-    } catch (promoErr) {
-      console.error("Stripe webhook: promo lookup error:", promoErr);
+    } catch (lookupErr) {
+      console.error("Stripe webhook: discount lookup error:", lookupErr);
     }
   }
 
@@ -158,7 +160,7 @@ export async function POST(request: Request) {
       subtotal: (subtotalCents / 100).toFixed(2),
       cc_fee: (ccFeeCents / 100).toFixed(2),
       total_charged: (totalCents / 100).toFixed(2),
-      promo_code: appliedPromoCode,
+      discount_code: appliedDiscountCode,
       stripe_session_id: session.id,
       stripe_payment_intent_id: stripePaymentIntentId,
       status: "paid",
@@ -240,7 +242,7 @@ export async function POST(request: Request) {
   <p style="margin:0;line-height:1.6;">
     6&quot; Scrapers: ${q6} &times; ${formatUSD(unit6Cents)} = ${formatUSD(q6 * unit6Cents)}<br/>
     11&quot; Scrapers: ${q11} &times; ${formatUSD(unit11Cents)} = ${formatUSD(q11 * unit11Cents)}<br/>
-    ${appliedPromoCode ? `<strong>Promo applied:</strong> ${escapeHtml(appliedPromoCode)}<br/>` : ""}
+    ${appliedDiscountCode ? `<strong>Discount applied:</strong> ${escapeHtml(appliedDiscountCode)}<br/>` : ""}
     <strong>Subtotal:</strong> ${formatUSD(subtotalCents)}
   </p>
   <hr style="border:0;border-top:1px solid #ddd;"/>
@@ -302,7 +304,7 @@ export async function POST(request: Request) {
   <p style="margin:0;line-height:1.6;">
     6&quot; Scrapers: ${q6} &times; ${formatUSD(unit6Cents)} = ${formatUSD(q6 * unit6Cents)}<br/>
     11&quot; Scrapers: ${q11} &times; ${formatUSD(unit11Cents)} = ${formatUSD(q11 * unit11Cents)}<br/>
-    ${appliedPromoCode ? `<strong>Promo applied:</strong> ${escapeHtml(appliedPromoCode)}<br/>` : ""}
+    ${appliedDiscountCode ? `<strong>Discount applied:</strong> ${escapeHtml(appliedDiscountCode)}<br/>` : ""}
     <strong>Subtotal:</strong> ${formatUSD(subtotalCents)}
   </p>
   <hr style="border:0;border-top:1px solid #ddd;"/>
