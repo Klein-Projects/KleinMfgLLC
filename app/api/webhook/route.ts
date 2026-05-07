@@ -110,6 +110,7 @@ export async function POST(request: Request) {
   let unit6Cents = PRICE_6_CENTS;
   let unit11Cents = PRICE_11_CENTS;
   let appliedDiscountCode: string | null = null;
+  let discountCompanyId: string | null = null;
 
   if (discountCodeMd) {
     try {
@@ -119,7 +120,10 @@ export async function POST(request: Request) {
         unit6Cents = resolved.unit6;
         unit11Cents = resolved.unit11;
         const anyDiscount = unit6Cents < PRICE_6_CENTS || unit11Cents < PRICE_11_CENTS;
-        if (anyDiscount) appliedDiscountCode = row.code;
+        if (anyDiscount) {
+          appliedDiscountCode = row.code;
+          discountCompanyId = row.company_id;
+        }
       } else {
         console.warn(
           `Stripe webhook: discount "${discountCodeMd}" not found/active at fulfillment; recording at list price.`
@@ -143,32 +147,37 @@ export async function POST(request: Request) {
 
   // ── Step 4: Save to Supabase using service role ──
   let isDuplicate = false;
+  let insertedOrderId: string | null = null;
   try {
     const supabase = getSupabaseAdmin();
-    const { error: dbError } = await supabase.from("orders").insert({
-      customer_name: customerName,
-      customer_email: customerEmail,
-      customer_phone: customerPhone || null,
-      company_name: companyName || null,
-      shipping_address_line1: addressLine1,
-      shipping_address_line2: addressLine2 || null,
-      shipping_city: city,
-      shipping_state: state,
-      shipping_zip: zip,
-      product_6in_qty: q6,
-      product_11in_qty: q11,
-      shipping_method: shippingMethodDb,
-      carrier_type: isCollect ? carrierType || null : null,
-      carrier_account_number: isCollect ? carrierAccountNumber || null : null,
-      shipping_cost: (shippingCents / 100).toFixed(2),
-      subtotal: (subtotalCents / 100).toFixed(2),
-      cc_fee: (ccFeeCents / 100).toFixed(2),
-      total_charged: (totalCents / 100).toFixed(2),
-      discount_code: appliedDiscountCode,
-      stripe_session_id: session.id,
-      stripe_payment_intent_id: stripePaymentIntentId,
-      status: "paid",
-    });
+    const { data: insertedOrder, error: dbError } = await supabase
+      .from("orders")
+      .insert({
+        customer_name: customerName,
+        customer_email: customerEmail,
+        customer_phone: customerPhone || null,
+        company_name: companyName || null,
+        shipping_address_line1: addressLine1,
+        shipping_address_line2: addressLine2 || null,
+        shipping_city: city,
+        shipping_state: state,
+        shipping_zip: zip,
+        product_6in_qty: q6,
+        product_11in_qty: q11,
+        shipping_method: shippingMethodDb,
+        carrier_type: isCollect ? carrierType || null : null,
+        carrier_account_number: isCollect ? carrierAccountNumber || null : null,
+        shipping_cost: (shippingCents / 100).toFixed(2),
+        subtotal: (subtotalCents / 100).toFixed(2),
+        cc_fee: (ccFeeCents / 100).toFixed(2),
+        total_charged: (totalCents / 100).toFixed(2),
+        discount_code: appliedDiscountCode,
+        stripe_session_id: session.id,
+        stripe_payment_intent_id: stripePaymentIntentId,
+        status: "paid",
+      })
+      .select("id")
+      .single();
 
     if (dbError) {
       // 23505 = unique_violation on stripe_session_id → Stripe retried this event.
@@ -180,9 +189,29 @@ export async function POST(request: Request) {
       } else {
         console.error("Stripe webhook: Supabase insert error:", dbError);
       }
+    } else {
+      insertedOrderId = insertedOrder?.id ?? null;
     }
   } catch (dbErr) {
     console.error("Stripe webhook: Supabase exception:", dbErr);
+  }
+
+  // ── Step 4b: Auto-attribute the order to the CRM (Phase 15K) ──
+  if (insertedOrderId && !isDuplicate) {
+    try {
+      await attributeOrderToCrm({
+        orderId: insertedOrderId,
+        customerEmail,
+        customerName,
+        discountCompanyId,
+        appliedDiscountCode,
+        q6,
+        q11,
+        totalCents,
+      });
+    } catch (attrErr) {
+      console.error("Stripe webhook: CRM attribution error:", attrErr);
+    }
   }
 
   // ── Step 5: Send notification email via Resend ──
@@ -370,4 +399,130 @@ export async function POST(request: Request) {
 
   // ── Step 6: Always return 200 to Stripe ──
   return NextResponse.json({ received: true }, { status: 200 });
+}
+
+
+// ============================================================
+// CRM attribution (Phase 15K)
+// Three branches: discount-code-tied company, contact email match,
+// or queue for manual review.
+// ============================================================
+async function attributeOrderToCrm(args: {
+  orderId: string;
+  customerEmail: string;
+  customerName: string;
+  discountCompanyId: string | null;
+  appliedDiscountCode: string | null;
+  q6: number;
+  q11: number;
+  totalCents: number;
+}) {
+  const supabase = getSupabaseAdmin();
+
+  const orderSummary =
+    `Web order: ${args.q6}× 6", ${args.q11}× 11" — ${formatUSD(args.totalCents)}` +
+    (args.appliedDiscountCode ? ` (code ${args.appliedDiscountCode})` : "");
+
+  // ── Branch 1: discount code tied to a company ──
+  if (args.discountCompanyId) {
+    const { data: lead } = await supabase
+      .from("leads")
+      .select("id")
+      .eq("company_id", args.discountCompanyId)
+      .order("last_activity_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (lead?.id) {
+      await logWebOrderActivity(
+        supabase,
+        lead.id,
+        orderSummary,
+        "matched_by_promo"
+      );
+      return;
+    }
+    // No lead under that company — fall through to review queue.
+    console.warn(
+      `CRM attribution: discount ${args.appliedDiscountCode} ties to company ` +
+        `${args.discountCompanyId} but it has no leads; queuing for review.`
+    );
+    await queueForReview(supabase, args.orderId);
+    return;
+  }
+
+  // ── Branch 2: customer email matches a known contact ──
+  const { data: contact } = await supabase
+    .from("contacts")
+    .select("id, company_id")
+    .ilike("email", args.customerEmail)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (contact?.id) {
+    const { data: lead } = await supabase
+      .from("leads")
+      .select("id")
+      .eq("contact_id", contact.id)
+      .order("last_activity_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (lead?.id) {
+      await logWebOrderActivity(
+        supabase,
+        lead.id,
+        orderSummary,
+        "matched_by_email"
+      );
+      return;
+    }
+    // Contact exists but no lead — queue for manual review so admin
+    // decides whether to start a new lead or link to an existing one.
+    await queueForReview(supabase, args.orderId);
+    return;
+  }
+
+  // ── Branch 3: no match — manual review ──
+  await queueForReview(supabase, args.orderId);
+}
+
+async function logWebOrderActivity(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  leadId: string,
+  summary: string,
+  outcome: "matched_by_promo" | "matched_by_email"
+) {
+  const { error: actErr } = await supabase.from("activities").insert({
+    lead_id: leadId,
+    type: "web_order",
+    summary,
+    outcome,
+  });
+  if (actErr) {
+    console.error("CRM attribution: failed to insert activity:", actErr);
+    return;
+  }
+  // Bump the lead's last_activity_at so it shows up at the top of pipeline views.
+  const { error: leadErr } = await supabase
+    .from("leads")
+    .update({ last_activity_at: new Date().toISOString() })
+    .eq("id", leadId);
+  if (leadErr) {
+    console.error("CRM attribution: failed to bump lead.last_activity_at:", leadErr);
+  }
+}
+
+async function queueForReview(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  orderId: string
+) {
+  const { error } = await supabase.from("web_order_review").insert({
+    order_id: orderId,
+    resolved: false,
+  });
+  if (error) {
+    console.error("CRM attribution: failed to queue web_order_review:", error);
+  }
 }

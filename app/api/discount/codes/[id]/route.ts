@@ -75,6 +75,12 @@ export async function PATCH(request: Request, { params }: Ctx) {
       typeof body.label === "string" && body.label.trim() ? body.label.trim() : null;
   }
   if (body?.is_active !== undefined) updates.is_active = !!body.is_active;
+  if (body?.company_id !== undefined) {
+    updates.company_id =
+      typeof body.company_id === "string" && body.company_id.trim()
+        ? body.company_id.trim()
+        : null;
+  }
 
   if (next_type === "tiered_percent") {
     // Tiered codes must clear flat values.

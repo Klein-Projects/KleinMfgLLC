@@ -17,8 +17,16 @@ export default async function PortalLayout({
     redirect("/portal/login");
   }
 
+  const { count: reviewCount } = await supabase
+    .from("web_order_review")
+    .select("id", { count: "exact", head: true })
+    .eq("resolved", false);
+
   return (
-    <PortalShell userEmail={user.email ?? ""}>
+    <PortalShell
+      userEmail={user.email ?? ""}
+      reviewCount={reviewCount ?? 0}
+    >
       {children}
       <QuickLogSlideOver />
     </PortalShell>
