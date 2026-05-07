@@ -78,7 +78,7 @@ function GenericThankYou() {
 function CheckCircle() {
   return (
     <svg
-      className="mx-auto h-20 w-20 text-red"
+      className="mx-auto h-20 w-20 text-green-600"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
