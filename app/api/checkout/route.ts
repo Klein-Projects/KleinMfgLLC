@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
+import { applyDiscount, lookupActivePromo } from "@/lib/promo";
 
 const PRICE_6_CENTS = 2100;
 const PRICE_11_CENTS = 2300;
@@ -41,6 +42,7 @@ export async function POST(request: Request) {
     shippingCost,
     carrierType,
     carrierAccountNumber,
+    promoCode,
   } = body ?? {};
 
   // ── Validate quantities ──
@@ -97,8 +99,33 @@ export async function POST(request: Request) {
     );
   }
 
-  // ── Server-side pricing ──
-  const subtotalCents = q6 * PRICE_6_CENTS + q11 * PRICE_11_CENTS;
+  // ── Server-side pricing (re-validate promo against DB; never trust client prices) ──
+  let unit6Cents = PRICE_6_CENTS;
+  let unit11Cents = PRICE_11_CENTS;
+  let appliedPromoCode: string | null = null;
+
+  if (typeof promoCode === "string" && promoCode.trim()) {
+    try {
+      const promo = await lookupActivePromo(promoCode);
+      if (!promo) {
+        return NextResponse.json(
+          { error: "Invalid or expired promo code." },
+          { status: 400 }
+        );
+      }
+      unit6Cents = applyDiscount(PRICE_6_CENTS, promo.discount_type, promo.discount_value_6);
+      unit11Cents = applyDiscount(PRICE_11_CENTS, promo.discount_type, promo.discount_value_11);
+      appliedPromoCode = promo.code;
+    } catch (err) {
+      console.error("Checkout: promo lookup failed:", err);
+      return NextResponse.json(
+        { error: "Could not validate promo code. Try again." },
+        { status: 500 }
+      );
+    }
+  }
+
+  const subtotalCents = q6 * unit6Cents + q11 * unit11Cents;
 
   let shippingCents = 0;
   if (shippingMethod === "klein_calculated") {
@@ -125,8 +152,12 @@ export async function POST(request: Request) {
     lineItems.push({
       price_data: {
         currency: "usd",
-        product_data: { name: '6" Phenolic Aviation Scraper' },
-        unit_amount: PRICE_6_CENTS,
+        product_data: {
+          name: appliedPromoCode
+            ? `6" Phenolic Aviation Scraper (Promo: ${appliedPromoCode})`
+            : '6" Phenolic Aviation Scraper',
+        },
+        unit_amount: unit6Cents,
       },
       quantity: q6,
     });
@@ -136,8 +167,12 @@ export async function POST(request: Request) {
     lineItems.push({
       price_data: {
         currency: "usd",
-        product_data: { name: '11" Phenolic Aviation Scraper' },
-        unit_amount: PRICE_11_CENTS,
+        product_data: {
+          name: appliedPromoCode
+            ? `11" Phenolic Aviation Scraper (Promo: ${appliedPromoCode})`
+            : '11" Phenolic Aviation Scraper',
+        },
+        unit_amount: unit11Cents,
       },
       quantity: q11,
     });
@@ -182,6 +217,9 @@ export async function POST(request: Request) {
     city: typeof city === "string" ? city.trim() : "",
     state: typeof state === "string" ? state : "",
     zip: typeof zip === "string" ? zip.trim() : "",
+    promoCode: appliedPromoCode ?? "",
+    unit6Cents: String(unit6Cents),
+    unit11Cents: String(unit11Cents),
   };
 
   // ── Create Stripe Checkout session ──

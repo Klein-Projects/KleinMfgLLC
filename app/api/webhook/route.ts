@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
+import { applyDiscount, lookupActivePromo } from "@/lib/promo";
 
 const PRICE_6_CENTS = 2100;
 const PRICE_11_CENTS = 2300;
@@ -84,6 +85,7 @@ export async function POST(request: Request) {
   const zip = (md.zip ?? "").trim();
   const carrierType = (md.carrierType ?? "").trim();
   const carrierAccountNumber = (md.carrierAccountNumber ?? "").trim();
+  const promoCode = (md.promoCode ?? "").trim();
 
   const q6 = parseInt(md.qty6in ?? "0", 10) || 0;
   const q11 = parseInt(md.qty11in ?? "0", 10) || 0;
@@ -100,7 +102,29 @@ export async function POST(request: Request) {
     typeof session.payment_intent === "string" ? session.payment_intent : null;
 
   // ── Step 3: Recalculate totals server-side ──
-  const subtotalCents = q6 * PRICE_6_CENTS + q11 * PRICE_11_CENTS;
+  // Re-fetch the promo from DB so the webhook never trusts Stripe metadata for prices.
+  let unit6Cents = PRICE_6_CENTS;
+  let unit11Cents = PRICE_11_CENTS;
+  let appliedPromoCode: string | null = null;
+
+  if (promoCode) {
+    try {
+      const promo = await lookupActivePromo(promoCode);
+      if (promo) {
+        unit6Cents = applyDiscount(PRICE_6_CENTS, promo.discount_type, promo.discount_value_6);
+        unit11Cents = applyDiscount(PRICE_11_CENTS, promo.discount_type, promo.discount_value_11);
+        appliedPromoCode = promo.code;
+      } else {
+        console.warn(
+          `Stripe webhook: promo "${promoCode}" not found/active at fulfillment; recording at list price.`
+        );
+      }
+    } catch (promoErr) {
+      console.error("Stripe webhook: promo lookup error:", promoErr);
+    }
+  }
+
+  const subtotalCents = q6 * unit6Cents + q11 * unit11Cents;
 
   let shippingCents = 0;
   if (isKleinCalc) {
@@ -134,6 +158,7 @@ export async function POST(request: Request) {
       subtotal: (subtotalCents / 100).toFixed(2),
       cc_fee: (ccFeeCents / 100).toFixed(2),
       total_charged: (totalCents / 100).toFixed(2),
+      promo_code: appliedPromoCode,
       stripe_session_id: session.id,
       stripe_payment_intent_id: stripePaymentIntentId,
       status: "paid",
@@ -213,8 +238,9 @@ export async function POST(request: Request) {
 
   <h3 style="margin:16px 0 4px;color:#1C2E4A;">ORDER</h3>
   <p style="margin:0;line-height:1.6;">
-    6&quot; Scrapers: ${q6} &times; $21.00 = ${formatUSD(q6 * PRICE_6_CENTS)}<br/>
-    11&quot; Scrapers: ${q11} &times; $23.00 = ${formatUSD(q11 * PRICE_11_CENTS)}<br/>
+    6&quot; Scrapers: ${q6} &times; ${formatUSD(unit6Cents)} = ${formatUSD(q6 * unit6Cents)}<br/>
+    11&quot; Scrapers: ${q11} &times; ${formatUSD(unit11Cents)} = ${formatUSD(q11 * unit11Cents)}<br/>
+    ${appliedPromoCode ? `<strong>Promo applied:</strong> ${escapeHtml(appliedPromoCode)}<br/>` : ""}
     <strong>Subtotal:</strong> ${formatUSD(subtotalCents)}
   </p>
   <hr style="border:0;border-top:1px solid #ddd;"/>
@@ -274,8 +300,9 @@ export async function POST(request: Request) {
 
   <h3 style="margin:16px 0 4px;color:#1C2E4A;">YOUR ORDER</h3>
   <p style="margin:0;line-height:1.6;">
-    6&quot; Scrapers: ${q6} &times; $21.00 = ${formatUSD(q6 * PRICE_6_CENTS)}<br/>
-    11&quot; Scrapers: ${q11} &times; $23.00 = ${formatUSD(q11 * PRICE_11_CENTS)}<br/>
+    6&quot; Scrapers: ${q6} &times; ${formatUSD(unit6Cents)} = ${formatUSD(q6 * unit6Cents)}<br/>
+    11&quot; Scrapers: ${q11} &times; ${formatUSD(unit11Cents)} = ${formatUSD(q11 * unit11Cents)}<br/>
+    ${appliedPromoCode ? `<strong>Promo applied:</strong> ${escapeHtml(appliedPromoCode)}<br/>` : ""}
     <strong>Subtotal:</strong> ${formatUSD(subtotalCents)}
   </p>
   <hr style="border:0;border-top:1px solid #ddd;"/>
