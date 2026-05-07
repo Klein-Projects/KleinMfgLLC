@@ -2,9 +2,8 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
 import { lookupActiveDiscount, resolveUnitPrices } from "@/lib/discount";
+import { getListPrices } from "@/lib/settings";
 
-const PRICE_6_CENTS = 2100;
-const PRICE_11_CENTS = 2300;
 const CC_FEE_RATE = 0.0309;
 
 let stripeClient: Stripe | null = null;
@@ -102,6 +101,11 @@ export async function POST(request: Request) {
     typeof session.payment_intent === "string" ? session.payment_intent : null;
 
   // ── Step 3: Recalculate totals server-side ──
+  // Read live list prices from site_settings so the price the customer was
+  // charged in Stripe lines up with what we record for fulfillment.
+  const { price6Cents: PRICE_6_CENTS, price11Cents: PRICE_11_CENTS } =
+    await getListPrices();
+
   // Re-fetch the discount from DB so the webhook never trusts Stripe metadata for prices.
   let unit6Cents = PRICE_6_CENTS;
   let unit11Cents = PRICE_11_CENTS;

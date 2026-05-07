@@ -8,6 +8,7 @@ import {
   Users,
   BookOpen,
   Truck,
+  Settings,
   LogOut,
 } from "lucide-react";
 
@@ -16,6 +17,7 @@ const navItems = [
   { href: "/portal/leads", label: "Leads", icon: Users },
   { href: "/portal/prompts", label: "Prompt Library", icon: BookOpen },
   { href: "/portal/shipments", label: "Shipments", icon: Truck },
+  { href: "/portal/settings", label: "Settings", icon: Settings },
 ];
 
 export default function PortalShell({

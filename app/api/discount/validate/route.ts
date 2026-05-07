@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { lookupActiveDiscount, resolveUnitPrices } from "@/lib/discount";
-
-// Server-authoritative list prices (cents). Mirrors /api/checkout and /api/webhook.
-const PRICE_6_CENTS = 2100;
-const PRICE_11_CENTS = 2300;
+import { getListPrices } from "@/lib/settings";
 
 export async function POST(request: Request) {
   let body: any;
@@ -42,6 +39,9 @@ export async function POST(request: Request) {
       { status: 200 }
     );
   }
+
+  const { price6Cents: PRICE_6_CENTS, price11Cents: PRICE_11_CENTS } =
+    await getListPrices();
 
   const { unit6, unit11, appliedTier } = resolveUnitPrices(
     row,

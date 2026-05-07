@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { lookupActiveDiscount, resolveUnitPrices } from "@/lib/discount";
+import { getListPrices } from "@/lib/settings";
 
-const PRICE_6_CENTS = 2100;
-const PRICE_11_CENTS = 2300;
 const CC_FEE_RATE = 0.0309;
 const MIN_SUBTOTAL_CENTS = 10000; // $100 minimum order
 
@@ -55,6 +54,11 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
+
+  // ── Read live list prices from site_settings ──
+  const { price6Cents: PRICE_6_CENTS, price11Cents: PRICE_11_CENTS } =
+    await getListPrices();
+
   if (q6 * PRICE_6_CENTS + q11 * PRICE_11_CENTS < MIN_SUBTOTAL_CENTS) {
     return NextResponse.json(
       { error: `Minimum order is $${(MIN_SUBTOTAL_CENTS / 100).toFixed(0)}.` },
