@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
-import { applyDiscount, lookupActivePromo } from "@/lib/promo";
+import { lookupActiveDiscount, resolveUnitPrices } from "@/lib/discount";
 
 const PRICE_6_CENTS = 2100;
 const PRICE_11_CENTS = 2300;
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
     shippingCost,
     carrierType,
     carrierAccountNumber,
-    promoCode,
+    discountCode,
   } = body ?? {};
 
   // ── Validate quantities ──
@@ -99,27 +99,31 @@ export async function POST(request: Request) {
     );
   }
 
-  // ── Server-side pricing (re-validate promo against DB; never trust client prices) ──
+  // ── Server-side pricing (re-validate discount against DB; never trust client prices) ──
   let unit6Cents = PRICE_6_CENTS;
   let unit11Cents = PRICE_11_CENTS;
-  let appliedPromoCode: string | null = null;
+  let appliedDiscountCode: string | null = null;
 
-  if (typeof promoCode === "string" && promoCode.trim()) {
+  if (typeof discountCode === "string" && discountCode.trim()) {
     try {
-      const promo = await lookupActivePromo(promoCode);
-      if (!promo) {
+      const row = await lookupActiveDiscount(discountCode);
+      if (!row) {
         return NextResponse.json(
-          { error: "Invalid or expired promo code." },
+          { error: "Invalid or expired discount code." },
           { status: 400 }
         );
       }
-      unit6Cents = applyDiscount(PRICE_6_CENTS, promo.discount_type, promo.discount_value_6);
-      unit11Cents = applyDiscount(PRICE_11_CENTS, promo.discount_type, promo.discount_value_11);
-      appliedPromoCode = promo.code;
+      const resolved = resolveUnitPrices(row, PRICE_6_CENTS, PRICE_11_CENTS, q6, q11);
+      unit6Cents = resolved.unit6;
+      unit11Cents = resolved.unit11;
+      // Only stamp the code if it actually produced a discount.
+      // (Tiered codes below the lowest tier resolve to list price.)
+      const anyDiscount = unit6Cents < PRICE_6_CENTS || unit11Cents < PRICE_11_CENTS;
+      if (anyDiscount) appliedDiscountCode = row.code;
     } catch (err) {
-      console.error("Checkout: promo lookup failed:", err);
+      console.error("Checkout: discount lookup failed:", err);
       return NextResponse.json(
-        { error: "Could not validate promo code. Try again." },
+        { error: "Could not validate discount code. Try again." },
         { status: 500 }
       );
     }
@@ -153,8 +157,8 @@ export async function POST(request: Request) {
       price_data: {
         currency: "usd",
         product_data: {
-          name: appliedPromoCode
-            ? `6" Phenolic Aviation Scraper (Promo: ${appliedPromoCode})`
+          name: appliedDiscountCode
+            ? `6" Phenolic Aviation Scraper (Discount: ${appliedDiscountCode})`
             : '6" Phenolic Aviation Scraper',
         },
         unit_amount: unit6Cents,
@@ -168,8 +172,8 @@ export async function POST(request: Request) {
       price_data: {
         currency: "usd",
         product_data: {
-          name: appliedPromoCode
-            ? `11" Phenolic Aviation Scraper (Promo: ${appliedPromoCode})`
+          name: appliedDiscountCode
+            ? `11" Phenolic Aviation Scraper (Discount: ${appliedDiscountCode})`
             : '11" Phenolic Aviation Scraper',
         },
         unit_amount: unit11Cents,
@@ -217,7 +221,7 @@ export async function POST(request: Request) {
     city: typeof city === "string" ? city.trim() : "",
     state: typeof state === "string" ? state : "",
     zip: typeof zip === "string" ? zip.trim() : "",
-    promoCode: appliedPromoCode ?? "",
+    discountCode: appliedDiscountCode ?? "",
     unit6Cents: String(unit6Cents),
     unit11Cents: String(unit11Cents),
   };
