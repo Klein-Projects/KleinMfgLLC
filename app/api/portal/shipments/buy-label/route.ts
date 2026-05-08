@@ -25,6 +25,8 @@ type OrderRow = {
   product_6in_qty: number;
   product_11in_qty: number;
   shipping_status: string;
+  is_sample: boolean;
+  sample_request_id: string | null;
 };
 
 function logEasyPostError(
@@ -64,7 +66,7 @@ export async function POST(req: NextRequest) {
   const { data: order, error: orderErr } = await supabase
     .from("orders")
     .select(
-      "id, customer_name, customer_phone, shipping_address_line1, shipping_address_line2, shipping_city, shipping_state, shipping_zip, product_6in_qty, product_11in_qty, shipping_status"
+      "id, customer_name, customer_phone, shipping_address_line1, shipping_address_line2, shipping_city, shipping_state, shipping_zip, product_6in_qty, product_11in_qty, shipping_status, is_sample, sample_request_id"
     )
     .eq("id", orderId)
     .maybeSingle<OrderRow>();
@@ -257,6 +259,80 @@ export async function POST(req: NextRequest) {
       },
       { status: 500 }
     );
+  }
+
+  // ── Sample-only CRM side-effects ─────────────────────────
+  // Best-effort: log loudly on failure but never block ok=true.
+  // The label is bought and the wallet is debited; reconciliation
+  // is fine to do by hand if any of these inserts miss.
+  if (order.is_sample && order.sample_request_id) {
+    try {
+      const { data: lead, error: leadErr } = await supabase
+        .from("leads")
+        .select("id")
+        .eq("sample_request_id", order.sample_request_id)
+        .maybeSingle<{ id: string }>();
+
+      if (leadErr) {
+        console.error("[buy-label] lead lookup failed for sample order:", {
+          orderId: order.id,
+          sampleRequestId: order.sample_request_id,
+          error: leadErr,
+        });
+      }
+
+      const { error: shipErr } = await supabase.from("shipments").insert({
+        lead_id: lead?.id ?? null,
+        tracking_number: bought.tracking_code,
+        carrier: "ups",
+        status: "pending",
+        recipient_name: order.customer_name,
+        notes: `Auto-created by EasyPost label purchase (order ${order.id}).`,
+        follow_up_created: false,
+      });
+
+      if (shipErr) {
+        console.error("[buy-label] CRM shipments insert failed:", {
+          orderId: order.id,
+          trackingCode: bought.tracking_code,
+          error: shipErr,
+        });
+      }
+
+      if (lead?.id) {
+        const { error: actErr } = await supabase.from("activities").insert({
+          lead_id: lead.id,
+          type: "sample_sent",
+          summary: `Samples shipped via UPS Ground, tracking: ${bought.tracking_code}`,
+        });
+
+        if (actErr) {
+          console.error("[buy-label] sample_sent activity insert failed:", {
+            leadId: lead.id,
+            orderId: order.id,
+            error: actErr,
+          });
+        }
+
+        const { error: leadUpdErr } = await supabase
+          .from("leads")
+          .update({ last_activity_at: new Date().toISOString() })
+          .eq("id", lead.id);
+
+        if (leadUpdErr) {
+          console.error("[buy-label] lead last_activity_at bump failed:", {
+            leadId: lead.id,
+            orderId: order.id,
+            error: leadUpdErr,
+          });
+        }
+      }
+    } catch (sideEffectErr) {
+      console.error(
+        "[buy-label] unexpected error in sample-only CRM block:",
+        sideEffectErr
+      );
+    }
   }
 
   return NextResponse.json({
