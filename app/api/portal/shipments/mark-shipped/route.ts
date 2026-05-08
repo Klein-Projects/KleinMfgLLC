@@ -18,6 +18,7 @@ type OrderRow = {
   carrier: string | null;
   service: string | null;
   shipping_status: string;
+  is_sample: boolean;
 };
 
 function escapeHtml(s: string): string {
@@ -62,6 +63,21 @@ function buildEmailHtml(order: OrderRow, trackingUrl: string): string {
     ? lineItems.map((l) => `&bull; ${l}`).join("<br/>")
     : "&mdash;";
 
+  const heading = order.is_sample
+    ? "Your Klein Manufacturing samples have shipped."
+    : "Your order has shipped.";
+
+  const introLine = order.is_sample
+    ? `Your Klein Manufacturing samples have shipped via UPS ${eService}.`
+    : `Your Klein Manufacturing order has shipped via UPS ${eService}.`;
+
+  const moneyHtml = order.is_sample
+    ? `<strong style="color:#A52A2A;font-size:16px;">Samples are on us &mdash; no charge.</strong>`
+    : `Subtotal: ${fmtUSD(order.subtotal)}<br/>
+      Shipping: ${fmtUSD(order.shipping_cost)}<br/>
+      Card processing fee: ${fmtUSD(order.cc_fee)}<br/>
+      <strong style="color:#A52A2A;font-size:16px;">Total paid: ${fmtUSD(order.total_charged)}</strong>`;
+
   return `<!doctype html>
 <html><body style="font-family:Calibri,'Segoe UI',-apple-system,BlinkMacSystemFont,Arial,sans-serif;color:#2E2E2E;max-width:640px;margin:0 auto;padding:0;background:#ffffff;">
   <div style="background:#1C2E4A;color:#ffffff;padding:20px 24px;">
@@ -71,10 +87,10 @@ function buildEmailHtml(order: OrderRow, trackingUrl: string): string {
   <hr style="border:0;border-top:3px solid #A52A2A;margin:0;"/>
 
   <div style="padding:24px;">
-    <h2 style="margin:0 0 12px;color:#1C2E4A;font-size:20px;">Your order has shipped.</h2>
+    <h2 style="margin:0 0 12px;color:#1C2E4A;font-size:20px;">${heading}</h2>
     <p style="margin:0 0 16px;line-height:1.6;">
       Hi ${eName},<br/><br/>
-      Your Klein Manufacturing order has shipped via UPS ${eService}.
+      ${introLine}
     </p>
 
     <h3 style="margin:20px 0 6px;color:#1C2E4A;font-size:14px;letter-spacing:0.5px;">TRACKING</h3>
@@ -88,10 +104,7 @@ function buildEmailHtml(order: OrderRow, trackingUrl: string): string {
     <p style="margin:0;line-height:1.6;">${itemsHtml}</p>
 
     <p style="margin:14px 0 0;line-height:1.6;">
-      Subtotal: ${fmtUSD(order.subtotal)}<br/>
-      Shipping: ${fmtUSD(order.shipping_cost)}<br/>
-      Card processing fee: ${fmtUSD(order.cc_fee)}<br/>
-      <strong style="color:#A52A2A;font-size:16px;">Total paid: ${fmtUSD(order.total_charged)}</strong>
+      ${moneyHtml}
     </p>
     <hr style="border:0;border-top:1px solid #ddd;margin:18px 0;"/>
 
@@ -113,10 +126,23 @@ function buildEmailText(order: OrderRow, trackingUrl: string): string {
     lines.push(`  ${order.product_11in_qty} x 11" Scraper`);
   }
 
+  const introLine = order.is_sample
+    ? `Your Klein Manufacturing samples have shipped via UPS ${order.service || "Ground"}.`
+    : `Your Klein Manufacturing order has shipped via UPS ${order.service || "Ground"}.`;
+
+  const moneyLines = order.is_sample
+    ? [`Samples are on us — no charge.`]
+    : [
+        `Subtotal: ${fmtUSD(order.subtotal)}`,
+        `Shipping: ${fmtUSD(order.shipping_cost)}`,
+        `Card processing fee: ${fmtUSD(order.cc_fee)}`,
+        `Total paid: ${fmtUSD(order.total_charged)}`,
+      ];
+
   return [
     `Hi ${firstName(order.customer_name)},`,
     ``,
-    `Your Klein Manufacturing order has shipped via UPS ${order.service || "Ground"}.`,
+    introLine,
     ``,
     `Tracking number: ${order.tracking_code ?? ""}`,
     `Track your package: ${trackingUrl}`,
@@ -124,10 +150,7 @@ function buildEmailText(order: OrderRow, trackingUrl: string): string {
     `Order details:`,
     ...(lines.length ? lines : ["  —"]),
     ``,
-    `Subtotal: ${fmtUSD(order.subtotal)}`,
-    `Shipping: ${fmtUSD(order.shipping_cost)}`,
-    `Card processing fee: ${fmtUSD(order.cc_fee)}`,
-    `Total paid: ${fmtUSD(order.total_charged)}`,
+    ...moneyLines,
     ``,
     `Questions? Reply to this email.`,
     ``,
@@ -158,7 +181,7 @@ export async function POST(req: NextRequest) {
   const { data: order, error: orderErr } = await supabase
     .from("orders")
     .select(
-      "id, customer_name, customer_email, product_6in_qty, product_11in_qty, subtotal, shipping_cost, cc_fee, total_charged, tracking_code, carrier, service, shipping_status"
+      "id, customer_name, customer_email, product_6in_qty, product_11in_qty, subtotal, shipping_cost, cc_fee, total_charged, tracking_code, carrier, service, shipping_status, is_sample"
     )
     .eq("id", orderId)
     .maybeSingle<OrderRow>();
@@ -202,6 +225,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: updateErr.message }, { status: 500 });
   }
 
+  // ── Sample-only: flip the matching CRM shipments row to in_transit ──
+  // Best-effort: a CRM hiccup must not block the customer email.
+  if (order.is_sample) {
+    const { error: shipUpdErr } = await supabase
+      .from("shipments")
+      .update({ shipped_at: shippedAt, status: "in_transit" })
+      .eq("tracking_number", order.tracking_code);
+
+    if (shipUpdErr) {
+      console.error("[mark-shipped] CRM shipments row update failed:", {
+        orderId: order.id,
+        trackingCode: order.tracking_code,
+        error: shipUpdErr,
+      });
+    }
+  }
+
   // ── Send tracking email (non-blocking) ───────────────────────────────
   const trackingUrl = `https://www.ups.com/track?tracknum=${encodeURIComponent(
     order.tracking_code
@@ -221,11 +261,14 @@ export async function POST(req: NextRequest) {
       const { Resend } = await import("resend");
       const resend = new Resend(process.env.RESEND_API_KEY);
 
+      const subject = order.is_sample
+        ? "Your Klein Manufacturing samples have shipped — tracking enclosed"
+        : "Your Klein Manufacturing order has shipped — tracking enclosed";
+
       const sendResult = await resend.emails.send({
         from: "Klein Manufacturing <sales@kleinmfgllc.com>",
         to: order.customer_email,
-        subject:
-          "Your Klein Manufacturing order has shipped — tracking enclosed",
+        subject,
         html: buildEmailHtml(order, trackingUrl),
         text: buildEmailText(order, trackingUrl),
         replyTo: "sales@kleinmfgllc.com",
