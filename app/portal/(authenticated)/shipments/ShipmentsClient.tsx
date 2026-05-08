@@ -64,6 +64,7 @@ export default function ShipmentsClient({
   shippedTotal,
   shippedPage,
   samples,
+  openSampleOrders,
 }: {
   initialTab: TabKey;
   pageSize: number;
@@ -74,6 +75,7 @@ export default function ShipmentsClient({
   shippedTotal: number;
   shippedPage: number;
   samples: SampleShipmentRow[];
+  openSampleOrders: WebOrderRow[];
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -102,6 +104,10 @@ export default function ShipmentsClient({
   const filteredSamples = useMemo(
     () => filterSamples(samples, trimmed),
     [samples, trimmed]
+  );
+  const filteredOpenSamples = useMemo(
+    () => filterOrders(openSampleOrders, trimmed),
+    [openSampleOrders, trimmed]
   );
 
   return (
@@ -150,7 +156,11 @@ export default function ShipmentsClient({
             isFiltered={trimmed.length > 0}
           />
         ) : (
-          <SampleTrackingTab initialShipments={filteredSamples} />
+          <SampleTrackingTab
+            initialShipments={filteredSamples}
+            openSampleOrders={filteredOpenSamples}
+            isFiltered={trimmed.length > 0}
+          />
         )}
       </div>
     </div>

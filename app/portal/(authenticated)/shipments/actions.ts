@@ -4,6 +4,13 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
+// Called from FulfillmentRow after every successful Buy/Reprint/Mark
+// Shipped/Void so both Web Orders and Open Sample Requests tables
+// reflect the new state without a full reload.
+export async function revalidateShipments() {
+  revalidatePath("/portal/shipments");
+}
+
 export async function createShipment(formData: FormData) {
   const supabase = createClient();
 

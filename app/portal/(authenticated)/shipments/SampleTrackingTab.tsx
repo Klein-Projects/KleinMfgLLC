@@ -19,7 +19,8 @@ import {
   X,
 } from "lucide-react";
 import { updateShipment } from "./actions";
-import type { SampleShipmentRow } from "./ShipmentsClient";
+import FulfillmentRow from "./FulfillmentRow";
+import type { SampleShipmentRow, WebOrderRow } from "./ShipmentsClient";
 
 type ShipmentStatus = SampleShipmentRow["status"];
 
@@ -49,8 +50,12 @@ type FilterTab = "all" | "active" | "delivered";
 
 export default function SampleTrackingTab({
   initialShipments,
+  openSampleOrders,
+  isFiltered,
 }: {
   initialShipments: SampleShipmentRow[];
+  openSampleOrders: WebOrderRow[];
+  isFiltered: boolean;
 }) {
   const [shipments, setShipments] = useState<SampleShipmentRow[]>(
     initialShipments
@@ -156,7 +161,60 @@ export default function SampleTrackingTab({
   const activeCount = shipments.filter((s) => s.status !== "delivered").length;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-10">
+      {/* ── Open Sample Requests (EasyPost-fulfilled samples) ── */}
+      <section>
+        <div className="mb-3 flex items-baseline justify-between">
+          <h2 className="text-lg font-semibold text-navy">
+            Open Sample Requests
+          </h2>
+          <p className="text-xs text-steel">
+            {openSampleOrders.length} request
+            {openSampleOrders.length === 1 ? "" : "s"} in queue
+          </p>
+        </div>
+
+        <div className="overflow-x-auto rounded-lg border border-navy/10 bg-white shadow-sm">
+          {openSampleOrders.length === 0 ? (
+            <div className="py-12 text-center text-sm text-steel">
+              {isFiltered
+                ? "No sample requests match your search."
+                : "No open sample requests. New requests from the public form land here."}
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-navy/10 text-left text-xs uppercase text-steel">
+                  <th className="px-4 py-3 font-medium">Order #</th>
+                  <th className="px-4 py-3 font-medium">Customer</th>
+                  <th className="px-4 py-3 font-medium">Ship to</th>
+                  <th className="px-4 py-3 font-medium">Items</th>
+                  <th className="px-4 py-3 font-medium">Weight</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 text-right font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-navy/5">
+                {openSampleOrders.map((o) => (
+                  <FulfillmentRow key={o.id} order={o} />
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </section>
+
+      {/* ── Recent Sample Shipments (CRM) ── */}
+      <section className="space-y-4">
+        <div className="mb-1 flex items-baseline justify-between">
+          <h2 className="text-lg font-semibold text-navy">
+            Recent Sample Shipments (CRM)
+          </h2>
+          <p className="text-xs text-steel">
+            {shipments.length} total shipment{shipments.length === 1 ? "" : "s"}
+          </p>
+        </div>
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-1 rounded-lg bg-navy/5 p-1">
           {(["all", "active", "delivered"] as FilterTab[]).map((tab) => (
@@ -404,6 +462,7 @@ export default function SampleTrackingTab({
       <p className="text-xs text-steel">
         {filtered.length} shipment{filtered.length !== 1 ? "s" : ""}
       </p>
+      </section>
     </div>
   );
 }

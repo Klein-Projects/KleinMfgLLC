@@ -1,7 +1,9 @@
 // ============================================================
 // /portal/shipments — server component
-// Phase 15L.6: tab 1 = Web Order Fulfillment (new),
-//              tab 2 = Sample Tracking (CRM, pre-existing).
+// Phase 15L.6: tab 1 = Web Order Fulfillment, tab 2 = Sample Tracking.
+// Phase 15M.6: Sample Tracking adds an "Open Sample Requests" queue
+// powered by orders rows with is_sample=true. Web Orders queries
+// filter samples out so the two queues stay clean.
 // ============================================================
 
 import { createClient } from "@/lib/supabase/server";
@@ -18,6 +20,11 @@ const ORDER_COLUMNS =
   "product_6in_qty, product_11in_qty, " +
   "shipping_status, shipped_at, tracking_code, carrier, service, " +
   "rate_amount, label_purchased_at";
+
+// .or filter that excludes is_sample=true rows. Defensive against any
+// pre-15M orders rows that might still have is_sample IS NULL — those
+// get treated as web orders, matching pre-15M behavior.
+const EXCLUDE_SAMPLES = "is_sample.is.null,is_sample.eq.false";
 
 type SearchParams = {
   tab?: string;
@@ -49,11 +56,12 @@ export default async function ShipmentsPage({
     Date.now() - 30 * 24 * 60 * 60 * 1000
   ).toISOString();
 
-  const [readyRes, shippedRes, samplesRes] = await Promise.all([
+  const [readyRes, shippedRes, samplesRes, openSamplesRes] = await Promise.all([
     supabase
       .from("orders")
       .select(ORDER_COLUMNS, { count: "exact" })
       .in("shipping_status", ["pending", "label_purchased"])
+      .or(EXCLUDE_SAMPLES)
       .order("created_at", { ascending: true })
       .range(readyFrom, readyFrom + PAGE_SIZE - 1),
     supabase
@@ -61,6 +69,7 @@ export default async function ShipmentsPage({
       .select(ORDER_COLUMNS, { count: "exact" })
       .eq("shipping_status", "shipped")
       .gte("shipped_at", thirtyDaysAgo)
+      .or(EXCLUDE_SAMPLES)
       .order("shipped_at", { ascending: false })
       .range(shippedFrom, shippedFrom + PAGE_SIZE - 1),
     supabase
@@ -69,6 +78,12 @@ export default async function ShipmentsPage({
         "id, tracking_number, carrier, status, recipient_name, shipped_at, delivered_at, notes, lead_id, lead:leads(id, contact:contacts(first_name, last_name), company:companies(name))"
       )
       .order("created_at", { ascending: false }),
+    supabase
+      .from("orders")
+      .select(ORDER_COLUMNS, { count: "exact" })
+      .eq("is_sample", true)
+      .in("shipping_status", ["pending", "label_purchased"])
+      .order("created_at", { ascending: true }),
   ]);
 
   return (
@@ -82,6 +97,9 @@ export default async function ShipmentsPage({
       shippedTotal={shippedRes.count ?? 0}
       shippedPage={shippedPage}
       samples={(samplesRes.data ?? []) as unknown as SampleShipmentRow[]}
+      openSampleOrders={
+        (openSamplesRes.data ?? []) as unknown as WebOrderRow[]
+      }
     />
   );
 }
