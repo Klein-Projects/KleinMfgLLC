@@ -53,7 +53,7 @@ export default function PortalShell({
         {/* Brand */}
         <div className="flex items-center gap-2 border-b border-white/10 px-5 py-5">
           <Image
-            src="/logo.png"
+            src="/logo-mark.png"
             alt="Klein Manufacturing"
             width={48}
             height={48}

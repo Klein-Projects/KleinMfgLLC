@@ -39,7 +39,7 @@ export default function PortalLoginPage() {
         {/* Branding */}
         <div className="mb-8 flex flex-col items-center gap-3">
           <Image
-            src="/logo.png"
+            src="/logo-mark.png"
             alt="Klein Manufacturing"
             width={48}
             height={48}

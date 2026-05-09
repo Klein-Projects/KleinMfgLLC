@@ -17,7 +17,7 @@ export default function SiteFooter() {
           <div className="flex flex-col gap-4">
             <Link href="/" className="flex items-center gap-2">
               <Image
-                src="/logo-light.png"
+                src="/logo-mark.png"
                 alt="Klein Manufacturing"
                 width={48}
                 height={48}
