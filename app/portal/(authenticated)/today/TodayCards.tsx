@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   Pencil,
   CheckCircle2,
+  X,
 } from "lucide-react";
 import type { TodayCard } from "@/lib/portal/today-queue";
 import { linkedinUrlFor } from "@/lib/portal/today-queue";
@@ -51,6 +52,8 @@ export default function TodayCards({ cards }: { cards: TodayCard[] }) {
   const [undo, setUndo] = useState<UndoState | null>(null);
   const [undoSeconds, setUndoSeconds] = useState(UNDO_WINDOW_SECONDS);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [editingLinkedInFor, setEditingLinkedInFor] =
+    useState<TodayCard | null>(null);
 
   const showUndo = useCallback((state: UndoState) => {
     if (undoTimer.current) clearTimeout(undoTimer.current);
@@ -232,6 +235,7 @@ export default function TodayCards({ cards }: { cards: TodayCard[] }) {
             pending={pendingId === card.lead_id}
             onPrimary={() => onPrimaryClick(card)}
             onMarkNotInterested={() => onMarkNotInterested(card)}
+            onAddLinkedIn={() => setEditingLinkedInFor(card)}
           />
         ))}
       </div>
@@ -277,6 +281,17 @@ export default function TodayCards({ cards }: { cards: TodayCard[] }) {
           </div>
         </div>
       )}
+
+      {editingLinkedInFor && (
+        <AddLinkedInModal
+          card={editingLinkedInFor}
+          onClose={() => setEditingLinkedInFor(null)}
+          onSaved={() => {
+            setEditingLinkedInFor(null);
+            router.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -286,11 +301,13 @@ function CardView({
   pending,
   onPrimary,
   onMarkNotInterested,
+  onAddLinkedIn,
 }: {
   card: TodayCard;
   pending: boolean;
   onPrimary: () => void;
   onMarkNotInterested: () => void;
+  onAddLinkedIn: () => void;
 }) {
   const linkedinUrl = linkedinUrlFor(card);
   const overdueLabel = overdueText(card.trigger.days_overdue);
@@ -384,13 +401,14 @@ function CardView({
           {primaryLabel}
         </button>
         {!linkedinUrl && (
-          <Link
-            href={`/portal/leads/${card.lead_id}`}
+          <button
+            type="button"
+            onClick={onAddLinkedIn}
             className="inline-flex items-center gap-1.5 rounded-md border border-navy/20 bg-white px-3 py-2 text-sm font-semibold text-charcoal transition-colors hover:bg-offwhite"
           >
             <Pencil className="h-3.5 w-3.5" />
             Add LinkedIn URL
-          </Link>
+          </button>
         )}
         <span className="ml-auto" />
         <button
@@ -449,6 +467,135 @@ function DoneCardView({
         </div>
       </div>
     </article>
+  );
+}
+
+// ── Add LinkedIn URL modal ────────────────────────────────────────────
+
+function AddLinkedInModal({
+  card,
+  onClose,
+  onSaved,
+}: {
+  card: TodayCard;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [url, setUrl] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function submit(ev: React.FormEvent) {
+    ev.preventDefault();
+    setFormError(null);
+    setSubmitting(true);
+    try {
+      const res = await fetch(
+        `/api/leads/${card.lead_id}/linkedin-url`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ linkedin_url: url.trim() }),
+        },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      onSaved();
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md overflow-hidden rounded-lg bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="flex items-start justify-between border-b border-navy/10 px-5 py-4">
+          <div>
+            <h2 className="text-base font-bold text-navy">Add LinkedIn URL</h2>
+            <p className="mt-0.5 text-xs text-steel">
+              {card.contact.full_name}
+              {card.company_name ? ` · ${card.company_name}` : ""}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-md p-1 text-steel hover:text-navy"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </header>
+
+        <form onSubmit={submit} className="space-y-4 px-5 py-4">
+          <div>
+            <label
+              htmlFor="li-url"
+              className="block text-xs font-semibold uppercase tracking-wide text-steel"
+            >
+              LinkedIn URL
+            </label>
+            <input
+              id="li-url"
+              ref={inputRef}
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://www.linkedin.com/in/jane-doe-aero/"
+              required
+              className="mt-1 w-full rounded-md border border-navy/20 px-3 py-2 text-sm text-charcoal outline-none focus:border-navy focus:ring-2 focus:ring-navy/20"
+            />
+            <p className="mt-1 text-[11px] text-steel">
+              Saves to both the lead and the contact's profile.
+            </p>
+          </div>
+
+          {formError && (
+            <div className="rounded-md border border-red bg-red/10 px-3 py-2 text-sm font-semibold text-red">
+              {formError}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 border-t border-navy/10 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center gap-2 rounded-md border border-navy/20 bg-white px-4 py-2 text-sm font-semibold text-navy hover:border-navy"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting || !url.trim()}
+              className="inline-flex items-center gap-2 rounded-md bg-navy px-4 py-2 text-sm font-semibold text-white transition hover:bg-navy/90 disabled:opacity-60"
+            >
+              {submitting ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
