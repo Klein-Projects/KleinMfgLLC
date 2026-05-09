@@ -1,8 +1,9 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
-import { CheckCircle, Clock, AlarmClock, Phone } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { CheckCircle, Clock, Copy, Phone } from "lucide-react";
 import { snoozeFollowUp, markContacted } from "@/app/portal/(authenticated)/leads/actions";
 
 const stageLabels: Record<string, string> = {
@@ -22,6 +23,13 @@ interface FollowUpLead {
   follow_up_date: string;
   contact: { first_name: string; last_name: string } | null;
   company: { name: string } | null;
+  linkedin_url?: string | null;
+  linkedin_thread_id?: string | null;
+  recommended_prompt?: {
+    id: string;
+    title: string;
+    body_personalized: string;
+  } | null;
 }
 
 function classifyFollowUp(dateStr: string): {
@@ -58,13 +66,56 @@ function classifyFollowUp(dateStr: string): {
 }
 
 function FollowUpRow({ lead }: { lead: FollowUpLead }) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [copyState, setCopyState] = useState<
+    "idle" | "working" | "done" | "error"
+  >("idle");
 
   const contactName = lead.contact
     ? `${lead.contact.first_name} ${lead.contact.last_name}`
     : "Unknown";
   const companyName = lead.company?.name ?? "";
   const info = classifyFollowUp(lead.follow_up_date);
+
+  const linkedinUrl =
+    lead.linkedin_url ??
+    (lead.linkedin_thread_id
+      ? `https://www.linkedin.com/messaging/thread/${lead.linkedin_thread_id}/`
+      : null);
+  const canCopy = !!lead.recommended_prompt?.body_personalized;
+
+  async function handleCopyScript() {
+    if (!canCopy || copyState === "working") return;
+    const body = lead.recommended_prompt!.body_personalized;
+    setCopyState("working");
+    try {
+      await navigator.clipboard.writeText(body);
+    } catch {
+      // Continue anyway — server-side log still happens.
+    }
+    if (linkedinUrl) {
+      window.open(linkedinUrl, "_blank", "noopener,noreferrer");
+    }
+    try {
+      const res = await fetch(`/api/leads/${lead.id}/mark-contacted`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt_id: lead.recommended_prompt?.id ?? null,
+          channel: "linkedin",
+          auto_log_summary: "Sent follow-up via dashboard widget",
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setCopyState("done");
+      router.refresh();
+      setTimeout(() => setCopyState("idle"), 2000);
+    } catch {
+      setCopyState("error");
+      setTimeout(() => setCopyState("idle"), 2500);
+    }
+  }
 
   return (
     <div className={`rounded-md px-3 py-2.5 ${info.rowClass}`}>
@@ -100,7 +151,26 @@ function FollowUpRow({ lead }: { lead: FollowUpLead }) {
       </div>
 
       {/* Action buttons */}
-      <div className="mt-2 flex gap-2">
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button
+          onClick={handleCopyScript}
+          disabled={!canCopy || copyState === "working"}
+          title={
+            canCopy
+              ? "Copy script + open LinkedIn + log activity"
+              : "No prompt template available for this status"
+          }
+          className="inline-flex items-center gap-1 rounded bg-red px-2 py-1 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-red/90 disabled:cursor-not-allowed disabled:bg-steel disabled:opacity-60"
+        >
+          <Copy className="h-3 w-3" />
+          {copyState === "done"
+            ? "Copied!"
+            : copyState === "error"
+              ? "Try again"
+              : copyState === "working"
+                ? "Logging…"
+                : "Copy Script"}
+        </button>
         <button
           onClick={() => startTransition(() => snoozeFollowUp(lead.id))}
           disabled={isPending}

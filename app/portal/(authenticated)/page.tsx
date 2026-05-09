@@ -7,6 +7,11 @@ import {
   Trophy,
 } from "lucide-react";
 import FollowUpPanel from "@/components/portal/FollowUpPanel";
+import {
+  pickRecommendedPrompt,
+  personalizePrompt,
+  type PromptRow,
+} from "@/lib/portal/today-queue";
 
 // ── Helpers ──
 
@@ -158,14 +163,15 @@ export default async function PortalDashboard() {
     // All leads for pipeline
     supabase.from("leads").select("status"),
 
-    // Follow-up list (overdue + next 3 days)
+    // Follow-up list (overdue + next 3 days). Also pulls the lead-level
+    // contact fields the dashboard widget's Copy Script button needs.
     supabase
       .from("leads")
       .select(
-        "id, status, follow_up_date, contact:contacts(first_name, last_name), company:companies(name)"
+        "id, status, follow_up_date, linkedin_url, linkedin_thread_id, email, contact:contacts(first_name, last_name, linkedin_url), company:companies(name)"
       )
       .lte("follow_up_date", threeDaysOut)
-      .not("status", "in", "(won,lost)")
+      .not("status", "in", "(won,lost,invited)")
       .order("follow_up_date", { ascending: true })
       .limit(15),
 
@@ -178,6 +184,13 @@ export default async function PortalDashboard() {
       .order("created_at", { ascending: false })
       .limit(10),
   ]);
+
+  // Prompt templates — used to enrich the follow-up widget rows with the
+  // recommended prompt + personalized body for the inline Copy Script button.
+  const { data: promptRows } = await supabase
+    .from("prompt_templates")
+    .select("id, category, title, body, use_count");
+  const prompts = (promptRows ?? []) as PromptRow[];
 
   const activeLeads = activeLeadsRes.count ?? 0;
   const followUpsDue = followUpsDueRes.count ?? 0;
@@ -194,8 +207,34 @@ export default async function PortalDashboard() {
   }
   const maxPipelineCount = Math.max(...Object.values(pipelineCounts), 1);
 
-  const followUpList = (followUpListRes.data ?? []) as any[];
+  const followUpRaw = (followUpListRes.data ?? []) as any[];
   const recentActivity = (recentActivityRes.data ?? []) as any[];
+
+  const followUpList = followUpRaw.map((lead) => {
+    const prompt = pickRecommendedPrompt(lead.status, prompts);
+    const firstName = lead.contact?.first_name ?? null;
+    const companyName = lead.company?.name ?? null;
+    return {
+      id: lead.id,
+      status: lead.status,
+      follow_up_date: lead.follow_up_date,
+      contact: lead.contact,
+      company: lead.company,
+      linkedin_url: lead.linkedin_url ?? lead.contact?.linkedin_url ?? null,
+      linkedin_thread_id: lead.linkedin_thread_id ?? null,
+      recommended_prompt: prompt
+        ? {
+            id: prompt.id,
+            title: prompt.title,
+            body_personalized: personalizePrompt(
+              prompt.body,
+              firstName,
+              companyName,
+            ),
+          }
+        : null,
+    };
+  });
 
   const statCards = [
     {

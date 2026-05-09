@@ -5,6 +5,7 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
+  ClipboardCheck,
   Users,
   BookOpen,
   Truck,
@@ -15,6 +16,7 @@ import {
 
 const navItems = [
   { href: "/portal", label: "Dashboard", icon: LayoutDashboard, key: "dashboard" },
+  { href: "/portal/today", label: "Today", icon: ClipboardCheck, key: "today" },
   { href: "/portal/leads", label: "Leads", icon: Users, key: "leads" },
   { href: "/portal/prompts", label: "Prompt Library", icon: BookOpen, key: "prompts" },
   { href: "/portal/shipments", label: "Shipments", icon: Truck, key: "shipments" },
@@ -25,10 +27,12 @@ const navItems = [
 export default function PortalShell({
   userEmail,
   reviewCount = 0,
+  todayCount = 0,
   children,
 }: {
   userEmail: string;
   reviewCount?: number;
+  todayCount?: number;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -69,7 +73,13 @@ export default function PortalShell({
           <ul className="space-y-1">
             {navItems.map((item) => {
               const active = isActive(item.href);
-              const showBadge = item.key === "review" && reviewCount > 0;
+              const badgeCount =
+                item.key === "review"
+                  ? reviewCount
+                  : item.key === "today"
+                    ? todayCount
+                    : 0;
+              const showBadge = badgeCount > 0;
               return (
                 <li key={item.href}>
                   <Link
@@ -84,7 +94,7 @@ export default function PortalShell({
                     <span className="flex-1">{item.label}</span>
                     {showBadge && (
                       <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red px-1.5 text-xs font-bold text-white">
-                        {reviewCount}
+                        {badgeCount}
                       </span>
                     )}
                   </Link>
