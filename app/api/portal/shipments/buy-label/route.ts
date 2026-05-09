@@ -218,6 +218,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // EasyPost's ZPL bodies sometimes contain NUL bytes (typically inside the
+  // ^GFA graphic field that encodes the carrier logo). Postgres `text`
+  // columns reject any string containing \x00 with the error
+  // "unsupported Unicode escape sequence", which causes the UPDATE below
+  // to fail with PostgREST status 400 — leaving the wallet debited and
+  // the order row unchanged. ZPL II is plain ASCII, so stripping NULs is
+  // safe and printers ignore them anyway.
+  const sanitizedLabelZpl = labelZpl.replace(/\x00/g, "");
+
   // ── Persist to the order row ─────────────────────────────
   const selected = bought.selected_rate ?? groundRate;
   const rateAmount = Number.parseFloat(selected.rate);
@@ -232,7 +241,7 @@ export async function POST(req: NextRequest) {
       rate_amount: Number.isFinite(rateAmount) ? rateAmount : null,
       label_format: "ZPL",
       label_url: bought.postage_label.label_url,
-      label_zpl: labelZpl,
+      label_zpl: sanitizedLabelZpl,
       label_purchased_at: new Date().toISOString(),
       shipping_status: "label_purchased",
     })
@@ -240,13 +249,25 @@ export async function POST(req: NextRequest) {
 
   if (updateErr) {
     // Label was bought (real money spent) but DB update failed.
-    // Surface it loudly so Sean can reconcile manually.
-    console.error("[buy-label] DB update failed AFTER label purchase:", {
-      orderId: order.id,
-      shipmentId: bought.id,
-      trackingCode: bought.tracking_code,
-      error: updateErr,
-    });
+    // Single-line JSON.stringify so the Vercel runtime-logs view does not
+    // collapse the per-key fields the way it does on a multi-line console.error.
+    const errFields = {
+      name: updateErr.name,
+      message: updateErr.message,
+      code: (updateErr as { code?: string }).code,
+      details: (updateErr as { details?: string }).details,
+      hint: (updateErr as { hint?: string }).hint,
+    };
+    console.error(
+      "[buy-label-error] " +
+        JSON.stringify({
+          orderId: order.id,
+          shipmentId: bought.id,
+          trackingCode: bought.tracking_code,
+          labelUrl: bought.postage_label.label_url,
+          updateErr: errFields,
+        })
+    );
     return NextResponse.json(
       {
         error:
@@ -255,7 +276,7 @@ export async function POST(req: NextRequest) {
         shipment_id: bought.id,
         tracking_code: bought.tracking_code,
         label_url: bought.postage_label.label_url,
-        db_error: updateErr.message,
+        db_error: errFields,
       },
       { status: 500 }
     );
@@ -338,7 +359,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     tracking_code: bought.tracking_code,
-    label_zpl: labelZpl,
+    label_zpl: sanitizedLabelZpl,
     rate_amount: Number.isFinite(rateAmount) ? rateAmount : null,
   });
 }
