@@ -1,15 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-// POST /api/leads/:id/mark-contacted — Phase 1 Today flow
+// POST /api/leads/:id/mark-contacted — Phase 1 Step 3 (cadence-driven)
 //
-// Logs an outbound message activity, bumps follow_up_date out 7 days,
-// and (when status was `new`) auto-progresses to `contacted`. Returns
-// undo context the client uses to reverse the action within 8s.
+// Body: {
+//   rule_id:           uuid,                 // which cadence rule fired
+//   prompt_id:         uuid | null,
+//   channel:           "linkedin" | "email" | "phone",
+//   action_on_send:    "none" | "mark_lost",
+//   auto_log_summary?: string,
+// }
 //
-// Auth: cookie session (single-user portal). The Cowork-facing
-// GET /api/today-queue uses Bearer token instead — that endpoint
-// lands in Step 4.
+// Effect:
+//   - Inserts an activity (type derived from channel; direction=outbound;
+//     prompt_id linked).
+//   - If action_on_send === "mark_lost", advances lead.status to "lost".
+//   - Does NOT bump follow_up_date — the cadence engine drives the queue
+//     now; follow_up_date is only a fallback for legacy paths.
+//
+// Returns undo context the client uses to power the 8s Undo toast.
+//
+// Auth: cookie session.
 
 export async function POST(
   req: NextRequest,
@@ -26,8 +37,11 @@ export async function POST(
   }
 
   const body = await req.json().catch(() => ({}));
+  const ruleId: string | null = body?.rule_id ?? null;
   const promptId: string | null = body?.prompt_id ?? null;
   const channel: string = body?.channel ?? "linkedin";
+  const actionOnSend: string =
+    body?.action_on_send === "mark_lost" ? "mark_lost" : "none";
   const summary: string =
     typeof body?.auto_log_summary === "string" && body.auto_log_summary.trim()
       ? body.auto_log_summary.trim()
@@ -65,6 +79,7 @@ export async function POST(
       type: activityType,
       summary,
       prompt_id: promptId,
+      direction: "outbound",
     })
     .select("id")
     .single();
@@ -76,20 +91,13 @@ export async function POST(
     );
   }
 
-  // Bump follow_up_date by 7 days from today (NY).
-  const newFollowUp = new Date();
-  newFollowUp.setDate(newFollowUp.getDate() + 7);
-  const newFollowUpISO = newFollowUp.toISOString().split("T")[0];
-
   const updates: Record<string, unknown> = {
-    follow_up_date: newFollowUpISO,
     last_activity_at: new Date().toISOString(),
   };
-
   let newStatus = prevStatus;
-  if (prevStatus === "new") {
-    updates.status = "contacted";
-    newStatus = "contacted";
+  if (actionOnSend === "mark_lost") {
+    updates.status = "lost";
+    newStatus = "lost";
   }
 
   const { error: updErr } = await supabase
@@ -106,7 +114,7 @@ export async function POST(
   return NextResponse.json({
     ok: true,
     new_status: newStatus,
-    new_follow_up_date: newFollowUpISO,
+    rule_id: ruleId,
     undo: {
       kind: "mark_contacted",
       lead_id: leadId,
