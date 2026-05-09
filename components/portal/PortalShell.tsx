@@ -51,15 +51,15 @@ export default function PortalShell({
       {/* Sidebar */}
       <aside className="fixed left-0 top-0 z-40 flex h-screen w-60 flex-col bg-[#1C2E4A]">
         {/* Brand */}
-        <div className="flex items-center gap-2 border-b border-white/10 px-5 py-5">
+        <div className="flex items-center gap-3 border-b border-white/10 px-5 py-5">
           <Image
             src="/logo-mark.png"
             alt="Klein Manufacturing"
-            width={48}
-            height={48}
-            className="h-12 w-auto"
+            width={64}
+            height={64}
+            className="h-16 w-auto"
           />
-          <span className="text-sm font-bold text-white">
+          <span className="text-xl font-bold text-white">
             Klein Portal
           </span>
         </div>
