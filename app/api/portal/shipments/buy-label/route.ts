@@ -198,10 +198,32 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Fetch the actual ZPL text ────────────────────────────
-  // EasyPost returns label_url pointing at a .zpl file when label_format=ZPL.
+  // When label_format=ZPL is requested, EasyPost generates BOTH the carrier
+  // default (PNG for UPS, exposed as label_url) AND the ZPL version (exposed
+  // as label_zpl_url). We need the ZPL one — fetching label_url silently
+  // returns PNG bytes, which Zebra printers can't interpret as commands and
+  // which display as binary garbage when opened in any text viewer.
+  const labelZplUrl = bought.postage_label.label_zpl_url;
+  if (!labelZplUrl) {
+    console.error(
+      "[buy-label] EasyPost returned no label_zpl_url despite label_format=ZPL",
+      { postage_label: bought.postage_label }
+    );
+    return NextResponse.json(
+      {
+        error:
+          "Label was purchased (wallet debited) but EasyPost did not return a " +
+          "ZPL URL. Print manually from the carrier-default label_url instead.",
+        tracking_code: bought.tracking_code,
+        label_url: bought.postage_label.label_url,
+      },
+      { status: 502 }
+    );
+  }
+
   let labelZpl: string;
   try {
-    const labelRes = await fetch(bought.postage_label.label_url);
+    const labelRes = await fetch(labelZplUrl);
     if (!labelRes.ok) throw new Error(`HTTP ${labelRes.status}`);
     labelZpl = await labelRes.text();
   } catch (e) {
