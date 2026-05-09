@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import Link from "next/link";
-import { CheckCircle, Clock, AlarmClock, Phone } from "lucide-react";
+import { CheckCircle, Clock, Phone } from "lucide-react";
 import { snoozeFollowUp, markContacted } from "@/app/portal/(authenticated)/leads/actions";
 
 const stageLabels: Record<string, string> = {

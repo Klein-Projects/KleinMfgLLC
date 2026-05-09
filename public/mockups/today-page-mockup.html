@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Klein Portal — Today (Phase 1 mockup)</title>
+<style>
+  :root {
+    --navy:     #1C2E4A;
+    --red:      #A52A2A;
+    --charcoal: #2E2E2E;
+    --steel:    #7A7A7A;
+    --offwhite: #F4F4F2;
+    --border:   rgba(28, 46, 74, 0.10);
+    --border-strong: rgba(28, 46, 74, 0.20);
+    --shadow-sm: 0 1px 2px rgba(28, 46, 74, 0.06);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--charcoal);
+    background: var(--offwhite);
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; text-decoration: none; }
+
+  /* ── Layout ── */
+  .layout { display: flex; min-height: 100vh; }
+  .sidebar {
+    position: fixed; top: 0; left: 0;
+    width: 240px; height: 100vh;
+    background: var(--navy); color: #fff;
+    display: flex; flex-direction: column;
+    z-index: 40;
+  }
+  .main { margin-left: 240px; flex: 1; min-height: 100vh; }
+  @media (max-width: 768px) {
+    .sidebar { display: none; }
+    .main { margin-left: 0; }
+  }
+
+  /* ── Sidebar ── */
+  .brand {
+    display: flex; align-items: center; gap: 12px;
+    padding: 18px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+  }
+  .brand-mark {
+    width: 56px; height: 56px;
+    border-radius: 6px;
+    background: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; color: var(--navy); letter-spacing: -0.02em;
+    font-size: 20px;
+  }
+  .brand-name { font-weight: 700; font-size: 18px; }
+
+  .nav { flex: 1; padding: 16px 12px; }
+  .nav ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+  .nav a {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 12px; border-radius: 6px;
+    font-size: 14px; font-weight: 500;
+    color: rgba(255, 255, 255, 0.70);
+    transition: background 120ms, color 120ms;
+  }
+  .nav a:hover { color: #fff; background: rgba(255, 255, 255, 0.05); }
+  .nav a.active {
+    color: #fff; background: rgba(255, 255, 255, 0.10);
+    border-left: 2px solid var(--red);
+    padding-left: 10px;
+  }
+  .nav .label { flex: 1; }
+  .nav .badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 20px; height: 20px; padding: 0 6px;
+    border-radius: 9999px; background: var(--red);
+    color: #fff; font-size: 11px; font-weight: 700;
+  }
+  .nav .icon { width: 16px; height: 16px; flex-shrink: 0; }
+
+  .sidebar-footer {
+    padding: 16px 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.10);
+    font-size: 12px; color: rgba(255, 255, 255, 0.55);
+  }
+
+  /* ── Page ── */
+  .page { padding: 28px 32px; max-width: 880px; }
+  @media (max-width: 768px) { .page { padding: 20px 16px; } }
+  .page-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
+  .page-title { font-size: 24px; font-weight: 700; color: var(--navy); margin: 0; }
+  .page-subtitle { color: var(--steel); font-size: 14px; margin-top: 4px; }
+  .page-meta { font-size: 13px; color: var(--steel); }
+
+  /* ── Card ── */
+  .card {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--shadow-sm);
+    margin-top: 16px;
+    overflow: hidden;
+  }
+  .card.actioned { background: #FAFAF9; border-color: rgba(28, 46, 74, 0.06); }
+  .card.actioned .card-body { opacity: 0.55; }
+  .card-top {
+    display: flex; gap: 14px; padding: 18px 20px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .avatar {
+    width: 40px; height: 40px; border-radius: 9999px;
+    background: var(--navy); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700;
+    flex-shrink: 0;
+  }
+  .card-who { flex: 1; min-width: 0; }
+  .card-name {
+    color: var(--navy); font-weight: 700; font-size: 16px;
+    margin: 0; line-height: 1.25;
+  }
+  .card-meta {
+    color: var(--steel); font-size: 13px; margin-top: 2px;
+    display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center;
+  }
+  .card-meta .dot {
+    width: 3px; height: 3px; border-radius: 9999px;
+    background: var(--steel); display: inline-block;
+  }
+  .card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+
+  /* ── Status badges ── */
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 9999px;
+    font-size: 11px; font-weight: 600;
+    line-height: 1.5;
+  }
+  .badge-status-new { background: rgba(28, 46, 74, 0.08); color: var(--navy); }
+  .badge-status-contacted { background: rgba(28, 46, 74, 0.08); color: var(--navy); }
+  .badge-status-engaged { background: rgba(28, 46, 74, 0.08); color: var(--navy); }
+  .badge-status-sample { background: rgba(245, 158, 11, 0.12); color: #92400E; }
+  .badge-status-quoted { background: rgba(34, 197, 94, 0.12); color: #166534; }
+
+  .overdue {
+    font-size: 12px; font-weight: 700;
+    padding: 3px 9px; border-radius: 9999px;
+  }
+  .overdue-red { background: rgba(165, 42, 42, 0.10); color: var(--red); }
+  .overdue-amber { background: rgba(245, 158, 11, 0.12); color: #92400E; }
+  .overdue-today { background: rgba(28, 46, 74, 0.08); color: var(--navy); }
+
+  /* ── Card body / script ── */
+  .card-body { padding: 14px 20px 16px; }
+  .prompt-row {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    font-size: 12px; color: var(--steel);
+    margin-bottom: 8px;
+  }
+  .prompt-cat {
+    background: rgba(28, 46, 74, 0.06);
+    color: var(--navy);
+    padding: 2px 8px; border-radius: 4px;
+    font-weight: 600; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .prompt-title { font-weight: 600; color: var(--charcoal); }
+
+  .script {
+    background: var(--offwhite);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 14px; line-height: 1.55;
+    color: var(--charcoal);
+    white-space: pre-wrap;
+  }
+  .script .var {
+    background: rgba(165, 42, 42, 0.08);
+    color: var(--red);
+    padding: 0 3px; border-radius: 3px;
+    font-weight: 600;
+  }
+  .channel-warn {
+    margin-top: 10px;
+    padding: 9px 12px;
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    color: #92400E;
+    border-radius: 6px;
+    font-size: 13px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  /* ── Card actions ── */
+  .actions {
+    display: flex; gap: 10px; flex-wrap: wrap;
+    padding: 14px 20px;
+    background: #FCFCFB;
+    border-top: 1px solid var(--border);
+    align-items: center;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 9px 14px;
+    border-radius: 6px;
+    font-size: 13px; font-weight: 600;
+    cursor: pointer; border: none;
+    transition: all 120ms;
+    font-family: inherit;
+  }
+  .btn-primary {
+    background: var(--red); color: #fff;
+  }
+  .btn-primary:hover { background: #8C2424; }
+  .btn-primary:disabled { background: var(--steel); cursor: not-allowed; opacity: 0.7; }
+  .btn-secondary {
+    background: #fff; color: var(--charcoal);
+    border: 1px solid var(--border-strong);
+  }
+  .btn-secondary:hover { background: var(--offwhite); }
+  .btn-ghost {
+    background: transparent; color: var(--steel);
+    padding: 9px 10px;
+  }
+  .btn-ghost:hover { color: var(--red); }
+  .actions-spacer { flex: 1; }
+  .actioned-stamp {
+    display: inline-flex; align-items: center; gap: 6px;
+    color: #166534; font-size: 13px; font-weight: 600;
+  }
+
+  /* ── Empty state ── */
+  .empty {
+    background: #fff;
+    border: 1px dashed var(--border-strong);
+    border-radius: 10px;
+    padding: 32px 24px;
+    text-align: center;
+    margin-top: 20px;
+    color: var(--steel);
+  }
+  .empty-title { font-weight: 700; color: var(--navy); margin-bottom: 4px; font-size: 16px; }
+
+  /* ── Undo toast ── */
+  .toast {
+    position: fixed; left: 50%; bottom: 28px;
+    transform: translateX(-50%);
+    background: var(--navy); color: #fff;
+    padding: 10px 14px 10px 16px;
+    border-radius: 8px;
+    box-shadow: 0 12px 24px rgba(28, 46, 74, 0.25);
+    display: flex; align-items: center; gap: 14px;
+    font-size: 13px;
+    z-index: 50;
+    animation: rise 220ms ease-out;
+  }
+  @keyframes rise {
+    from { transform: translate(-50%, 12px); opacity: 0; }
+    to   { transform: translate(-50%, 0); opacity: 1; }
+  }
+  .toast-msg { font-weight: 500; }
+  .toast .undo {
+    color: #fff; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+    font-size: 11px;
+    background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.30);
+    padding: 5px 10px; border-radius: 5px; cursor: pointer;
+  }
+  .toast .undo:hover { background: rgba(255, 255, 255, 0.20); }
+  .toast-timer {
+    width: 24px; height: 24px;
+    color: rgba(255, 255, 255, 0.60);
+    font-size: 11px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    border: 1.5px solid rgba(255, 255, 255, 0.25);
+    border-radius: 9999px;
+  }
+
+  /* ── Mockup annotations (visible scaffolding) ── */
+  .mockup-banner {
+    background: rgba(165, 42, 42, 0.06);
+    border-bottom: 1px solid rgba(165, 42, 42, 0.20);
+    color: var(--red);
+    font-size: 12px; font-weight: 600;
+    padding: 8px 16px;
+    text-align: center;
+    letter-spacing: 0.02em;
+  }
+  .scenario-note {
+    margin: 24px 0 4px; padding-top: 18px;
+    border-top: 1px dashed var(--border-strong);
+    font-size: 12px; color: var(--steel);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    font-weight: 700;
+  }
+</style>
+</head>
+<body>
+
+<div class="mockup-banner">
+  STATIC MOCKUP — Phase 1 / Step 1 review artifact. No JS, no live data. Brand colors and layout pulled from the existing portal.
+</div>
+
+<div class="layout">
+
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar" aria-label="Portal navigation">
+    <div class="brand">
+      <div class="brand-mark">K</div>
+      <div class="brand-name">Klein Portal</div>
+    </div>
+    <nav class="nav">
+      <ul>
+        <li><a href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span class="label">Dashboard</span></a></li>
+
+        <li><a href="#" class="active"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg><span class="label">Today</span><span class="badge">5</span></a></li>
+
+        <li><a href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="label">Leads</span></a></li>
+
+        <li><a href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span class="label">Prompt Library</span></a></li>
+
+        <li><a href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg><span class="label">Shipments</span></a></li>
+
+        <li><a href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z"/></svg><span class="label">Review Queue</span></a></li>
+
+        <li><a href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span class="label">Settings</span></a></li>
+      </ul>
+    </nav>
+    <div class="sidebar-footer">
+      sean@kleinmfgllc.com
+    </div>
+  </aside>
+
+  <!-- ── MAIN ── -->
+  <main class="main">
+    <div class="page">
+      <header class="page-header">
+        <div>
+          <h1 class="page-title">Today</h1>
+          <div class="page-subtitle">Friday, May 8, 2026 — 5 follow-ups, 1 done.</div>
+        </div>
+        <div class="page-meta">Auto-snooze on contact: <strong>+7 days</strong></div>
+      </header>
+
+      <!-- ── CARD 1 — contacted, 15 days overdue, Follow-Up ── -->
+      <article class="card">
+        <div class="card-top">
+          <div class="avatar">JP</div>
+          <div class="card-who">
+            <p class="card-name">Joseph Pisciotta</p>
+            <div class="card-meta">
+              <span>Aircraft Maintenance Manager</span>
+              <span class="dot"></span>
+              <span>PSA Airlines, Inc.</span>
+            </div>
+          </div>
+          <div class="card-right">
+            <span class="overdue overdue-red">15 days overdue</span>
+            <span class="badge badge-status-contacted">Contacted</span>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="prompt-row">
+            <span class="prompt-cat">Follow-Up</span>
+            <span class="prompt-title">1 Week After Connect (General)</span>
+          </div>
+          <div class="script">Hi <span class="var">Joseph</span>, thanks for connecting last month! Wanted to circle back — we make handcrafted phenolic aviation scrapers, made in the USA, safe on aluminum and composites. A lot of <span class="var">PSA Airlines</span>'s peer carriers run them on the line. Happy to send a couple of free samples for the 6" and 11" so your guys can put them through the wringer. What address should they go to?</div>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-primary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copy script + Open LinkedIn
+          </button>
+          <button class="btn btn-secondary">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Snooze 3 days
+          </button>
+          <button class="btn btn-ghost">Skip today</button>
+          <div class="actions-spacer"></div>
+          <button class="btn btn-ghost">Mark not interested</button>
+        </div>
+      </article>
+
+      <!-- ── CARD 2 — engaged, 2 days overdue, Follow-Up ── -->
+      <article class="card">
+        <div class="card-top">
+          <div class="avatar">AC</div>
+          <div class="card-who">
+            <p class="card-name">Allison Chen</p>
+            <div class="card-meta">
+              <span>Director of Line Maintenance</span>
+              <span class="dot"></span>
+              <span>JetBlue Tech Ops</span>
+            </div>
+          </div>
+          <div class="card-right">
+            <span class="overdue overdue-amber">2 days overdue</span>
+            <span class="badge badge-status-engaged">Engaged</span>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="prompt-row">
+            <span class="prompt-cat">Follow-Up</span>
+            <span class="prompt-title">Post-Reply, Push for Sample Address</span>
+          </div>
+          <div class="script">Appreciate the reply, <span class="var">Allison</span>. Easiest way to settle this is to put one in your team's hands — happy to ship a 6" and 11" out today on us. What address at <span class="var">JetBlue Tech Ops</span> should I send them to, and is there a name they should be addressed to?</div>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-primary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copy script + Open LinkedIn
+          </button>
+          <button class="btn btn-secondary">Snooze 3 days</button>
+          <button class="btn btn-ghost">Skip today</button>
+          <div class="actions-spacer"></div>
+          <button class="btn btn-ghost">Mark not interested</button>
+        </div>
+      </article>
+
+      <!-- ── CARD 3 — sample_sent, 6 days overdue, Sample Follow-Up ── -->
+      <article class="card">
+        <div class="card-top">
+          <div class="avatar">MR</div>
+          <div class="card-who">
+            <p class="card-name">Marcus Rivera</p>
+            <div class="card-meta">
+              <span>Senior Buyer, Consumables</span>
+              <span class="dot"></span>
+              <span>Delta TechOps</span>
+            </div>
+          </div>
+          <div class="card-right">
+            <span class="overdue overdue-red">6 days overdue</span>
+            <span class="badge badge-status-sample">Sample Sent</span>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="prompt-row">
+            <span class="prompt-cat">Sample Follow-Up</span>
+            <span class="prompt-title">Day 7 — Did Samples Land Yet?</span>
+          </div>
+          <div class="script">Hey <span class="var">Marcus</span> — quick check, did the samples land at <span class="var">Delta TechOps</span>? Tracking shows delivered last Friday. Curious what your guys thought once they got a few hangar shifts on them.</div>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-primary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copy script + Open LinkedIn
+          </button>
+          <button class="btn btn-secondary">Snooze 3 days</button>
+          <button class="btn btn-ghost">Skip today</button>
+          <div class="actions-spacer"></div>
+          <button class="btn btn-ghost">Mark not interested</button>
+        </div>
+      </article>
+
+      <!-- ── CARD 4 — new, due today, First Contact, NO LinkedIn URL FALLBACK ── -->
+      <article class="card">
+        <div class="card-top">
+          <div class="avatar">SK</div>
+          <div class="card-who">
+            <p class="card-name">Sarah Kim</p>
+            <div class="card-meta">
+              <span>Director of Maintenance</span>
+              <span class="dot"></span>
+              <span>Mountain Air Cargo</span>
+            </div>
+          </div>
+          <div class="card-right">
+            <span class="overdue overdue-today">Due today</span>
+            <span class="badge badge-status-new">New</span>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="prompt-row">
+            <span class="prompt-cat">First Contact</span>
+            <span class="prompt-title">Aviation MRO Cold Note</span>
+          </div>
+          <div class="script">Hi <span class="var">Sarah</span> — Sean from Klein Manufacturing here, we hand-make phenolic aviation scrapers in PA. Safe on aluminum, composites, painted surfaces — guys at PSA, Endeavor, and a couple Part 145 shops are running them on the line. Worth a 30-second look for <span class="var">Mountain Air Cargo</span>?</div>
+          <div class="channel-warn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+            <span>No LinkedIn URL on file. Add one to enable one-click open, or copy the script and find them manually.</span>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-primary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copy script
+          </button>
+          <button class="btn btn-secondary">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Add LinkedIn URL
+          </button>
+          <button class="btn btn-secondary">Snooze 3 days</button>
+          <button class="btn btn-ghost">Skip today</button>
+          <div class="actions-spacer"></div>
+          <button class="btn btn-ghost">Mark not interested</button>
+        </div>
+      </article>
+
+      <!-- ── CARD 5 — quoted, 22 days overdue, Sample Follow-Up ── -->
+      <article class="card">
+        <div class="card-top">
+          <div class="avatar">DH</div>
+          <div class="card-who">
+            <p class="card-name">David Halloran</p>
+            <div class="card-meta">
+              <span>VP Materials</span>
+              <span class="dot"></span>
+              <span>STS Aviation Group</span>
+            </div>
+          </div>
+          <div class="card-right">
+            <span class="overdue overdue-red">22 days overdue</span>
+            <span class="badge badge-status-quoted">Quoted</span>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="prompt-row">
+            <span class="prompt-cat">Sample Follow-Up</span>
+            <span class="prompt-title">Quote-In-Hand Nudge</span>
+          </div>
+          <div class="script">Hey <span class="var">David</span> — circling back on the quote we sent a few weeks ago. Anything I can clarify on pricing or lead time to help <span class="var">STS Aviation Group</span> get a small trial PO across the line?</div>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-primary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copy script + Open LinkedIn
+          </button>
+          <button class="btn btn-secondary">Snooze 3 days</button>
+          <button class="btn btn-ghost">Skip today</button>
+          <div class="actions-spacer"></div>
+          <button class="btn btn-ghost">Mark not interested</button>
+        </div>
+      </article>
+
+      <p class="scenario-note">Already actioned today (collapses below the queue)</p>
+
+      <!-- ── CARD 6 — done state ── -->
+      <article class="card actioned">
+        <div class="card-top">
+          <div class="avatar" style="background: var(--steel);">TS</div>
+          <div class="card-who">
+            <p class="card-name" style="color: var(--steel);">Tom Shepherd</p>
+            <div class="card-meta">
+              <span>Stockroom Manager</span>
+              <span class="dot"></span>
+              <span>Endeavor Air</span>
+            </div>
+          </div>
+          <div class="card-right">
+            <span class="actioned-stamp">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              Contacted, 11:42 AM
+            </span>
+            <span style="font-size: 12px; color: var(--steel);">Next follow-up: May 15</span>
+          </div>
+        </div>
+      </article>
+
+      <p class="scenario-note">When the queue is empty</p>
+      <div class="empty">
+        <p class="empty-title">All caught up.</p>
+        <p style="margin: 0;">No follow-ups due today. Cowork's 3pm digest will be quiet, too.</p>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<!-- ── UNDO TOAST ── -->
+<div class="toast" role="status">
+  <div class="toast-timer">8</div>
+  <div class="toast-msg">Logged contact for <strong>Tom Shepherd</strong> · follow-up bumped to May 15</div>
+  <button class="undo">Undo</button>
+</div>
+
+</body>
+</html>

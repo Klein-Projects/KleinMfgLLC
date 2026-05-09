@@ -43,11 +43,19 @@ export default async function LeadDetailPage({
     .eq("lead_id", params.id)
     .order("created_at", { ascending: false });
 
+  // Fetch prompt templates for the activity log form's grouped picker.
+  const { data: prompts } = await supabase
+    .from("prompt_templates")
+    .select("id, category, title")
+    .order("category")
+    .order("title");
+
   return (
     <LeadDetailClient
       lead={lead}
       activities={activities ?? []}
       shipments={shipments ?? []}
+      prompts={prompts ?? []}
     />
   );
 }

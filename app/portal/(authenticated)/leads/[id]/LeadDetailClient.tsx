@@ -75,6 +75,21 @@ const typeLabels: Record<string, string> = {
   follow_up: "Follow-Up",
 };
 
+const PROMPT_CATEGORY_LABELS: Record<string, string> = {
+  first_contact:   "First Contact",
+  follow_up:       "Follow-Up",
+  no_reply:        "No Reply",
+  sample_followup: "Sample Follow-Up",
+  won:             "Closed/Won",
+  nurture:         "Nurture",
+};
+
+interface PromptOption {
+  id: string;
+  category: string;
+  title: string;
+}
+
 const sourceLabels: Record<string, string> = {
   linkedin: "LinkedIn",
   website: "Website",
@@ -127,10 +142,12 @@ export default function LeadDetailClient({
   lead,
   activities,
   shipments,
+  prompts,
 }: {
   lead: any;
   activities: any[];
   shipments: any[];
+  prompts: PromptOption[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -144,6 +161,8 @@ export default function LeadDetailClient({
   const contact = lead.contact;
   const company = lead.company;
   const sampleRequest = lead.sample_request;
+
+  const promptTitleById = new Map(prompts.map((p) => [p.id, p.title]));
 
   function handleStatusChange(newStatus: string) {
     startTransition(async () => {
@@ -198,6 +217,7 @@ export default function LeadDetailClient({
           email: (formData.get("email") as string) || null,
           phone: (formData.get("phone") as string) || null,
           address: (formData.get("address") as string) || null,
+          linkedin_url: (formData.get("linkedin_url") as string) || null,
           company_name: (formData.get("company_name") as string) || null,
           company_id: company?.id ?? null,
         });
@@ -422,6 +442,18 @@ export default function LeadDetailClient({
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-charcoal/60">
+                      LinkedIn URL
+                    </label>
+                    <input
+                      type="url"
+                      name="linkedin_url"
+                      defaultValue={contact.linkedin_url ?? ""}
+                      placeholder="https://linkedin.com/in/…"
+                      className="mt-1 w-full rounded-md border border-navy/20 bg-white px-3 py-2 text-sm text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-charcoal/60">
                       Address
                     </label>
                     <input
@@ -467,32 +499,22 @@ export default function LeadDetailClient({
                   {contact.title && (
                     <p className="text-sm text-charcoal/70">{contact.title}</p>
                   )}
-                  {contact.email && (
-                    <p className="flex items-center gap-2 text-sm text-charcoal/70">
-                      <Mail className="h-3.5 w-3.5 text-steel" />
+                  <p className="flex items-center gap-2 text-sm text-charcoal/70">
+                    <Mail className="h-3.5 w-3.5 text-steel" />
+                    {contact.email ? (
                       <a
                         href={`mailto:${contact.email}`}
                         className="hover:text-navy hover:underline"
                       >
                         {contact.email}
                       </a>
-                    </p>
-                  )}
-                  {contact.phone && (
-                    <p className="flex items-center gap-2 text-sm text-charcoal/70">
-                      <Phone className="h-3.5 w-3.5 text-steel" />
-                      {contact.phone}
-                    </p>
-                  )}
-                  {contact.address && (
-                    <p className="flex items-center gap-2 text-sm text-charcoal/70">
-                      <MapPin className="h-3.5 w-3.5 text-steel" />
-                      {contact.address}
-                    </p>
-                  )}
-                  {contact.linkedin_url && (
-                    <p className="flex items-center gap-2 text-sm">
-                      <ExternalLink className="h-3.5 w-3.5 text-steel" />
+                    ) : (
+                      <span className="text-steel">—</span>
+                    )}
+                  </p>
+                  <p className="flex items-center gap-2 text-sm text-charcoal/70">
+                    <ExternalLink className="h-3.5 w-3.5 text-steel" />
+                    {contact.linkedin_url ? (
                       <a
                         href={contact.linkedin_url}
                         target="_blank"
@@ -501,6 +523,18 @@ export default function LeadDetailClient({
                       >
                         LinkedIn Profile
                       </a>
+                    ) : (
+                      <span className="text-steel">—</span>
+                    )}
+                  </p>
+                  <p className="flex items-center gap-2 text-sm text-charcoal/70">
+                    <Phone className="h-3.5 w-3.5 text-steel" />
+                    {contact.phone || <span className="text-steel">—</span>}
+                  </p>
+                  {contact.address && (
+                    <p className="flex items-center gap-2 text-sm text-charcoal/70">
+                      <MapPin className="h-3.5 w-3.5 text-steel" />
+                      {contact.address}
                     </p>
                   )}
                 </div>
@@ -793,6 +827,9 @@ export default function LeadDetailClient({
                   const badgeColor =
                     typeBadgeColors[activity.type] ??
                     "bg-gray-100 text-gray-800";
+                  const promptLabel = activity.prompt_id
+                    ? promptTitleById.get(activity.prompt_id) ?? activity.prompt_used
+                    : activity.prompt_used;
                   return (
                     <div
                       key={activity.id}
@@ -804,6 +841,11 @@ export default function LeadDetailClient({
                         >
                           {typeLabels[activity.type] ?? activity.type}
                         </span>
+                        {activity.direction === "inbound" && (
+                          <span className="rounded bg-teal-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-teal-800">
+                            Inbound
+                          </span>
+                        )}
                         <span className="text-xs text-steel">
                           {formatDateTime(activity.created_at)}
                         </span>
@@ -817,10 +859,10 @@ export default function LeadDetailClient({
                           {activity.outcome}
                         </p>
                       )}
-                      {activity.prompt_used && (
+                      {promptLabel && (
                         <p className="mt-0.5 text-xs text-charcoal/60">
                           <span className="font-medium">Prompt:</span>{" "}
-                          {activity.prompt_used}
+                          {promptLabel}
                         </p>
                       )}
                     </div>
@@ -886,12 +928,33 @@ export default function LeadDetailClient({
                 <label className="block text-xs font-medium text-charcoal/60">
                   Prompt Used
                 </label>
-                <input
-                  type="text"
-                  name="prompt_used"
-                  placeholder="Which template message?"
+                <select
+                  name="prompt_id"
+                  defaultValue=""
                   className="mt-1 w-full rounded-md border border-navy/20 bg-white px-3 py-2 text-sm text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
-                />
+                >
+                  <option value="">— None —</option>
+                  {(() => {
+                    const grouped: Record<string, PromptOption[]> = {};
+                    for (const p of prompts) {
+                      (grouped[p.category] ??= []).push(p);
+                    }
+                    return Object.keys(grouped)
+                      .sort()
+                      .map((cat) => (
+                        <optgroup
+                          key={cat}
+                          label={PROMPT_CATEGORY_LABELS[cat] ?? cat}
+                        >
+                          {grouped[cat].map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.title}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ));
+                  })()}
+                </select>
               </div>
 
               <button

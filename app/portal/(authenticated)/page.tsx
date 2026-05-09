@@ -158,14 +158,16 @@ export default async function PortalDashboard() {
     // All leads for pipeline
     supabase.from("leads").select("status"),
 
-    // Follow-up list (overdue + next 3 days)
+    // Follow-up list (overdue + next 3 days). The Today page is the
+    // canonical cadence-driven outreach surface; this widget remains as
+    // a manual follow_up_date-based snapshot.
     supabase
       .from("leads")
       .select(
         "id, status, follow_up_date, contact:contacts(first_name, last_name), company:companies(name)"
       )
       .lte("follow_up_date", threeDaysOut)
-      .not("status", "in", "(won,lost)")
+      .not("status", "in", "(won,lost,invited)")
       .order("follow_up_date", { ascending: true })
       .limit(15),
 

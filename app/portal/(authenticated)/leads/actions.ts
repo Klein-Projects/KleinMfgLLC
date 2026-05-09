@@ -33,6 +33,7 @@ export async function updateContact(
     email: string | null;
     phone: string | null;
     address: string | null;
+    linkedin_url: string | null;
     company_name: string | null;
     company_id: string | null;
   }
@@ -77,6 +78,7 @@ export async function updateContact(
       email: fields.email?.trim() || null,
       phone: fields.phone?.trim() || null,
       address: fields.address?.trim() || null,
+      linkedin_url: fields.linkedin_url?.trim() || null,
       ...(companyIdToLink !== fields.company_id
         ? { company_id: companyIdToLink }
         : {}),
@@ -96,16 +98,31 @@ export async function logActivity(formData: FormData) {
   const type = formData.get("type") as string;
   const summary = formData.get("summary") as string;
   const outcome = (formData.get("outcome") as string) || null;
-  const promptUsed = (formData.get("prompt_used") as string) || null;
+  const promptId = (formData.get("prompt_id") as string) || null;
 
   if (!summary?.trim()) throw new Error("Summary is required");
+
+  // When a prompt is selected, look up its title and store it in the
+  // legacy prompt_used column too. This keeps the existing timeline UI
+  // and any downstream readers working until prompt_used is fully retired.
+  let promptUsed: string | null = null;
+  if (promptId) {
+    const { data: tpl } = await supabase
+      .from("prompt_templates")
+      .select("title")
+      .eq("id", promptId)
+      .single();
+    promptUsed = tpl?.title ?? null;
+  }
 
   const { error } = await supabase.from("activities").insert({
     lead_id: leadId,
     type,
     summary: summary.trim(),
     outcome,
+    prompt_id: promptId,
     prompt_used: promptUsed,
+    direction: "outbound",
   });
 
   if (error) throw new Error(error.message);
