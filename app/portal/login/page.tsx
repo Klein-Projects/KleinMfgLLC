@@ -45,7 +45,7 @@ export default function PortalLoginPage() {
             height={96}
             className="h-24 w-auto"
           />
-          <h1 className="text-xl font-bold text-navy">Klein Sales Portal</h1>
+          <h1 className="text-xl font-bold text-navy">Klein Portal</h1>
         </div>
 
         {/* Login form */}

@@ -60,7 +60,7 @@ export default function PortalShell({
             className="h-12 w-auto"
           />
           <span className="text-sm font-bold text-white">
-            Klein Sales Portal
+            Klein Portal
           </span>
         </div>
 
