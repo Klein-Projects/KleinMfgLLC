@@ -36,6 +36,37 @@ export function isWebUsbSupported(): boolean {
   return typeof navigator !== "undefined" && "usb" in navigator;
 }
 
+// Per-browser sticky flag. Once we've definitively learned that WebUSB
+// can't open the printer on this machine (typically: Windows print
+// spooler is holding the USB Printing-class interface, so claimInterface
+// throws "Access denied"), we record that and stop offering WebUSB. The
+// rest of the app falls back to the download → file-association
+// auto-print path, which works regardless of spooler ownership.
+const BLOCKED_KEY = "klein-webusb-blocked";
+
+export function isWebUsbBlocked(): boolean {
+  if (typeof localStorage === "undefined") return false;
+  return localStorage.getItem(BLOCKED_KEY) === "true";
+}
+
+export function markWebUsbBlocked(): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(BLOCKED_KEY, "true");
+}
+
+export function clearWebUsbBlocked(): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.removeItem(BLOCKED_KEY);
+}
+
+// "Access denied" / "unable to claim" — the spooler-conflict signature.
+// Returned as a boolean instead of a string match so we can extend the
+// list of failure signatures later without touching call sites.
+export function isSpoolerConflict(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /access denied|unable to claim|claim the printer/i.test(msg);
+}
+
 function findPrinterEndpoint(device: USBDevice): ClaimedEndpoint | null {
   const cfg = device.configuration;
   if (!cfg) return null;

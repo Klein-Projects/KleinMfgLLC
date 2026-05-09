@@ -19,6 +19,9 @@ import type { WebOrderRow } from "./ShipmentsClient";
 import {
   base64ToBytes,
   getConnectionState,
+  isSpoolerConflict,
+  isWebUsbBlocked,
+  markWebUsbBlocked,
   printZplBytes,
 } from "@/lib/webusb-print";
 
@@ -65,18 +68,30 @@ export default function FulfillmentRow({ order }: { order: WebOrderRow }) {
   const isLabelReady = order.shipping_status === "label_purchased";
 
   // Try direct USB print via the connected Zebra. Returns true if the
-  // bytes made it onto the printer; false if no printer is connected
-  // (callers should fall back to the file-download path). Throws only
-  // for transient errors that the caller can show to the user.
+  // bytes made it onto the printer; false if WebUSB is disabled,
+  // sticky-blocked, no printer paired, or the spooler is holding the
+  // interface. Spooler conflicts permanently flip the sticky-blocked
+  // flag so subsequent clicks don't bother trying — the download →
+  // file-association auto-print path handles printing from then on.
+  // Non-spooler errors propagate up so we don't silently drop them.
   async function tryDirectPrintBase64(base64: string): Promise<boolean> {
+    if (isWebUsbBlocked()) return false;
     const state = await getConnectionState();
     if (state.kind !== "connected") return false;
-    const bytes = base64ToBytes(base64);
-    await printZplBytes(bytes);
-    return true;
+    try {
+      await printZplBytes(base64ToBytes(base64));
+      return true;
+    } catch (e) {
+      if (isSpoolerConflict(e)) {
+        markWebUsbBlocked();
+        return false;
+      }
+      throw e;
+    }
   }
 
   async function tryDirectPrintFromEndpoint(): Promise<boolean> {
+    if (isWebUsbBlocked()) return false;
     const state = await getConnectionState();
     if (state.kind !== "connected") return false;
     const res = await fetch(`/api/portal/shipments/${order.id}/label`);
@@ -86,8 +101,16 @@ export default function FulfillmentRow({ order }: { order: WebOrderRow }) {
       );
     }
     const bytes = new Uint8Array(await res.arrayBuffer());
-    await printZplBytes(bytes);
-    return true;
+    try {
+      await printZplBytes(bytes);
+      return true;
+    } catch (e) {
+      if (isSpoolerConflict(e)) {
+        markWebUsbBlocked();
+        return false;
+      }
+      throw e;
+    }
   }
 
   async function handleBuyAndPrint() {
@@ -103,13 +126,17 @@ export default function FulfillmentRow({ order }: { order: WebOrderRow }) {
       if (!res.ok || !json.ok) {
         throw new Error(json.error ?? `Request failed (${res.status}).`);
       }
-      // Direct USB print if a Zebra is connected; otherwise fall back
-      // to the existing file-download path so the user is never stuck.
+      // Direct USB print if WebUSB works on this machine; otherwise
+      // fall back silently to the file-download path. The download
+      // either auto-opens via the .zpl file association (true one-
+      // click) or the user opens it manually — both end up printing.
       let printed = false;
       if (typeof json.label_zpl_base64 === "string") {
         try {
           printed = await tryDirectPrintBase64(json.label_zpl_base64);
         } catch (printErr) {
+          // Non-spooler error (e.g. transfer stall) — surface it so
+          // the user knows the bytes didn't reach the printer.
           setError(
             "Label was bought, but direct print failed: " +
               (printErr instanceof Error ? printErr.message : String(printErr)) +

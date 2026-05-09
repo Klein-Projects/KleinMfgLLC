@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import { Printer, CheckCircle2 } from "lucide-react";
 import {
   getConnectionState,
+  isWebUsbBlocked,
   isWebUsbSupported,
   requestZebraPrinter,
   type ConnectionState,
@@ -25,8 +26,14 @@ export default function PrinterStatusWidget() {
   const [state, setState] = useState<ConnectionState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [blocked, setBlocked] = useState<boolean | null>(null);
 
   useEffect(() => {
+    // Read the sticky "WebUSB doesn't work on this machine" flag set
+    // by FulfillmentRow when a direct-print attempt hits the spooler-
+    // conflict signature. When set, we hide the chip entirely and let
+    // the download → auto-print path do the work.
+    setBlocked(isWebUsbBlocked());
     if (!isWebUsbSupported()) {
       setState({ kind: "unsupported", reason: "WebUSB not supported." });
       return;
@@ -36,7 +43,9 @@ export default function PrinterStatusWidget() {
       .catch(() => setState({ kind: "disconnected" }));
   }, []);
 
-  if (!state || state.kind === "unsupported") return null;
+  if (blocked === null || !state) return null;
+  if (blocked) return null;
+  if (state.kind === "unsupported") return null;
 
   if (state.kind === "connected") {
     return (
