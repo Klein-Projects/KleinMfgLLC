@@ -248,12 +248,23 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ── Fetch the actual ZPL text ────────────────────────────
-  let labelZpl: string;
+  // ── Fetch the actual ZPL bytes ───────────────────────────
+  // EasyPost's UPSDAP ZPL bodies are NOT pure ASCII — the ^GFB graphic
+  // field embeds the carrier logo as inline raw binary, which means the
+  // body contains every byte value 0x00..0xFF. We must read it as bytes
+  // (not text), and we must encode it as base64 for storage in the
+  // Postgres TEXT column (which rejects NUL bytes and which gets
+  // corrupted by .text() decoding the binary as UTF-8). The download
+  // endpoint base64-decodes back to bytes before streaming to the
+  // browser, so the printer receives byte-for-byte the same data
+  // EasyPost sent.
+  let labelZplBase64: string;
   try {
     const labelRes = await fetch(labelZplUrl);
     if (!labelRes.ok) throw new Error(`HTTP ${labelRes.status}`);
-    labelZpl = await labelRes.text();
+    labelZplBase64 = Buffer.from(await labelRes.arrayBuffer()).toString(
+      "base64"
+    );
   } catch (e) {
     console.error("[buy-label] failed to fetch ZPL body:", e);
     return NextResponse.json(
@@ -267,15 +278,6 @@ export async function POST(req: NextRequest) {
       { status: 502 }
     );
   }
-
-  // EasyPost's ZPL bodies sometimes contain NUL bytes (typically inside the
-  // ^GFA graphic field that encodes the carrier logo). Postgres `text`
-  // columns reject any string containing \x00 with the error
-  // "unsupported Unicode escape sequence", which causes the UPDATE below
-  // to fail with PostgREST status 400 — leaving the wallet debited and
-  // the order row unchanged. ZPL II is plain ASCII, so stripping NULs is
-  // safe and printers ignore them anyway.
-  const sanitizedLabelZpl = labelZpl.replace(/\x00/g, "");
 
   // ── Persist to the order row ─────────────────────────────
   const selected = bought.selected_rate ?? groundRate;
@@ -291,7 +293,7 @@ export async function POST(req: NextRequest) {
       rate_amount: Number.isFinite(rateAmount) ? rateAmount : null,
       label_format: "ZPL",
       label_url: bought.postage_label.label_url,
-      label_zpl: sanitizedLabelZpl,
+      label_zpl: labelZplBase64,
       label_purchased_at: new Date().toISOString(),
       shipping_status: "label_purchased",
     })
@@ -409,7 +411,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     tracking_code: bought.tracking_code,
-    label_zpl: sanitizedLabelZpl,
+    label_zpl_base64: labelZplBase64,
     rate_amount: Number.isFinite(rateAmount) ? rateAmount : null,
   });
 }

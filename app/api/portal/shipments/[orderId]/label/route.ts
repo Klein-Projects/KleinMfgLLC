@@ -15,6 +15,62 @@ type OrderRow = {
 
 type Ctx = { params: { orderId: string } };
 
+// ZPL II files start with `^XA`. We use this to validate that a cached
+// label_zpl base64 string actually decodes to real ZPL bytes — if it
+// doesn't (e.g., legacy rows from before the binary-safe fix that stored
+// UTF-8-decoded label content as plain text), we self-heal by re-fetching
+// from EasyPost using the order's shipment_id.
+const ZPL_HEADER_HEX = "5e5841"; // "^XA"
+
+function looksLikeZpl(bytes: Buffer): boolean {
+  return (
+    bytes.length >= 3 &&
+    bytes.slice(0, 3).toString("hex").toLowerCase() === ZPL_HEADER_HEX
+  );
+}
+
+async function fetchFreshZplBytes(
+  shipmentId: string
+): Promise<{ ok: true; bytes: Buffer } | { ok: false; status: number; reason: string }> {
+  const convertRes = await easypostFetch(
+    `/shipments/${shipmentId}/label?file_format=zpl`
+  );
+  if (!convertRes.ok) {
+    return {
+      ok: false,
+      status: 502,
+      reason: `EasyPost label conversion HTTP ${convertRes.status}.`,
+    };
+  }
+  let shipment: EasyPostShipment;
+  try {
+    shipment = await convertRes.json();
+  } catch {
+    return {
+      ok: false,
+      status: 502,
+      reason: "EasyPost returned an unreadable conversion response.",
+    };
+  }
+  const labelZplUrl = shipment.postage_label?.label_zpl_url;
+  if (!labelZplUrl) {
+    return {
+      ok: false,
+      status: 502,
+      reason: "EasyPost did not return a label_zpl_url after conversion.",
+    };
+  }
+  const labelRes = await fetch(labelZplUrl);
+  if (!labelRes.ok) {
+    return {
+      ok: false,
+      status: 502,
+      reason: `ZPL download HTTP ${labelRes.status}.`,
+    };
+  }
+  return { ok: true, bytes: Buffer.from(await labelRes.arrayBuffer()) };
+}
+
 // GET /api/portal/shipments/[orderId]/label
 //   default       → streams the saved ZPL as klein-label-<short>.zpl
 //   ?format=pdf   → asks EasyPost to re-render the label as PDF and streams it,
@@ -46,7 +102,7 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     return NextResponse.json({ error: "Order not found." }, { status: 404 });
   }
 
-  if (!order.label_zpl) {
+  if (!order.label_zpl && !order.shipment_id) {
     return NextResponse.json(
       {
         error:
@@ -131,8 +187,70 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     });
   }
 
-  // ── Default: stream the saved ZPL ───────────────────────────────────
-  return new NextResponse(order.label_zpl, {
+  // ── Default: serve the cached ZPL bytes ─────────────────────────────
+  // label_zpl is stored as base64 (binary-safe). If decoding it produces
+  // valid ZPL bytes (starts with ^XA), serve them. Otherwise — legacy
+  // rows from before the binary fix that stored UTF-8-decoded text —
+  // self-heal by re-fetching from EasyPost using shipment_id and update
+  // the cache for next time.
+  let labelBytes: Buffer | null = null;
+
+  if (order.label_zpl) {
+    try {
+      const decoded = Buffer.from(order.label_zpl, "base64");
+      if (looksLikeZpl(decoded)) {
+        labelBytes = decoded;
+      }
+    } catch {
+      // base64 decode threw (very unusual) — fall through to re-fetch
+    }
+  }
+
+  if (!labelBytes) {
+    if (!order.shipment_id) {
+      return NextResponse.json(
+        {
+          error:
+            "Cached label is invalid and no EasyPost shipment_id is on file " +
+            "to re-fetch it. Buy a fresh label or print manually from the " +
+            "carrier-default label_url.",
+          label_url: order.label_url,
+        },
+        { status: 422 }
+      );
+    }
+    const fresh = await fetchFreshZplBytes(order.shipment_id);
+    if (!fresh.ok) {
+      console.error("[label] self-heal re-fetch failed", {
+        orderId: order.id,
+        shipmentId: order.shipment_id,
+        reason: fresh.reason,
+      });
+      return NextResponse.json(
+        {
+          error:
+            "Could not re-fetch the ZPL from EasyPost. " + fresh.reason,
+          label_url: order.label_url,
+        },
+        { status: fresh.status }
+      );
+    }
+    labelBytes = fresh.bytes;
+    // Update the cache so future reprints are fast and don't hit EasyPost.
+    const newBase64 = labelBytes.toString("base64");
+    const { error: cacheErr } = await supabase
+      .from("orders")
+      .update({ label_zpl: newBase64 })
+      .eq("id", order.id);
+    if (cacheErr) {
+      console.error("[label] cache update after self-heal failed", {
+        orderId: order.id,
+        error: cacheErr.message,
+      });
+    }
+  }
+
+  return new NextResponse(labelBytes, {
     status: 200,
     headers: {
       "Content-Type": "application/octet-stream",
