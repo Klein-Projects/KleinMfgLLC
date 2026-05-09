@@ -17,11 +17,11 @@ export default function SiteFooter() {
           <div className="flex flex-col gap-4">
             <Link href="/" className="flex items-center gap-2">
               <Image
-                src="/logo.png"
+                src="/logo-light.png"
                 alt="Klein Manufacturing"
-                width={32}
-                height={32}
-                className="h-8 w-auto"
+                width={48}
+                height={48}
+                className="h-12 w-auto"
               />
               <span className="text-lg font-bold text-white">
                 Klein Manufacturing

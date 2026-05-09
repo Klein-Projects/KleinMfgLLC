@@ -55,9 +55,9 @@ export default function PortalShell({
           <Image
             src="/logo.png"
             alt="Klein Manufacturing"
-            width={28}
-            height={28}
-            className="h-7 w-auto"
+            width={48}
+            height={48}
+            className="h-12 w-auto"
           />
           <span className="text-sm font-bold text-white">
             Klein Sales Portal
