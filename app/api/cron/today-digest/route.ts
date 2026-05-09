@@ -74,14 +74,6 @@ function inSendWindow(now: Date): boolean {
   return Math.abs(actual - target) <= WINDOW_TOLERANCE_MIN;
 }
 
-function isWeekdayPacific(now: Date): boolean {
-  const wd = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    weekday: "short",
-  }).format(now);
-  return wd !== "Sat" && wd !== "Sun";
-}
-
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const dryRun =
@@ -106,16 +98,12 @@ export async function GET(req: NextRequest) {
   const now = new Date();
   const parts = pacificDateParts(now);
 
-  // ── Window + weekday guard ────────────────────────────────────────
-  // Skipped on dry-run so Sean can preview from any timezone any day.
+  // ── Window guard ──────────────────────────────────────────────────
+  // Vercel Cron schedules in UTC; only one of the two daily slots will
+  // be the right one for Sean's local Pacific time on any given day.
+  // Skipped on dry-run so Sean can preview from any timezone any time.
+  // (Digest sends 7 days a week — no weekday guard.)
   if (!dryRun) {
-    if (!isWeekdayPacific(now)) {
-      return NextResponse.json({
-        sent: false,
-        reason: "weekend",
-        pacific_date: parts.pacificDateISO,
-      });
-    }
     if (!inSendWindow(now)) {
       const { hour, minute } = localPacificClock(now);
       return NextResponse.json({

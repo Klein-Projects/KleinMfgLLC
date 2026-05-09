@@ -201,7 +201,7 @@ function footerHtml(): string {
     `Klein Manufacturing, LLC · Made in the USA`,
     `</td>`,
     `<td align="right" valign="middle" style="font:12px/1.4 ${HEADER_FONT};color:${COLORS.white};opacity:0.85;">`,
-    `Sent 3:30 PM PT, weekdays`,
+    `Sent 3:30 PM PT, daily`,
     `</td>`,
     `</tr>`,
     `</table>`,
