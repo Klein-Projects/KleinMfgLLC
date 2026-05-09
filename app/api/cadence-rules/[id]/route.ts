@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { validateRulePayload } from "../route";
+import { validateRulePayload } from "@/lib/portal/cadence-rules";
 
 // PATCH /api/cadence-rules/:id
 //   Partial update. Used for inline active toggle and the edit modal.
