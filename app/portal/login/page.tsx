@@ -41,9 +41,9 @@ export default function PortalLoginPage() {
           <Image
             src="/logo-mark.png"
             alt="Klein Manufacturing"
-            width={48}
-            height={48}
-            className="h-12 w-auto"
+            width={96}
+            height={96}
+            className="h-24 w-auto"
           />
           <h1 className="text-xl font-bold text-navy">Klein Sales Portal</h1>
         </div>

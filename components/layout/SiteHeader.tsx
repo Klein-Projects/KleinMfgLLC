@@ -22,9 +22,9 @@ export default function SiteHeader() {
           <Image
             src="/logo-mark.png"
             alt="Klein Manufacturing"
-            width={64}
-            height={64}
-            className="h-16 w-auto"
+            width={80}
+            height={80}
+            className="h-20 w-auto"
             priority
           />
           <span className="text-2xl font-bold text-red">

@@ -19,9 +19,9 @@ export default function SiteFooter() {
               <Image
                 src="/logo-mark.png"
                 alt="Klein Manufacturing"
-                width={48}
-                height={48}
-                className="h-12 w-auto"
+                width={64}
+                height={64}
+                className="h-16 w-auto"
               />
               <span className="text-lg font-bold text-white">
                 Klein Manufacturing
