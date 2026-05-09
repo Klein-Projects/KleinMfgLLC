@@ -250,7 +250,10 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     }
   }
 
-  return new NextResponse(labelBytes, {
+  // Wrap in Uint8Array for the BodyInit type — Node's Buffer<ArrayBufferLike>
+  // type isn't recognized by NextResponse's BodyInit param, even though
+  // Buffer extends Uint8Array at runtime.
+  return new NextResponse(new Uint8Array(labelBytes), {
     status: 200,
     headers: {
       "Content-Type": "application/octet-stream",
