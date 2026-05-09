@@ -118,13 +118,32 @@ export async function POST(req: NextRequest) {
       status: refundRes.status,
       messages: shipment.messages,
     });
+    // Pull EasyPost's actual reason out of the messages array if present.
+    // Common causes (in rough order of frequency for our flows):
+    //   - "must be refunded on the same date the label was created"
+    //     → API-only same-UTC-day restriction. Refund still works via the
+    //       EasyPost dashboard, which uses UPS's longer 30-day window.
+    //   - "package has already been scanned by the carrier" → genuinely
+    //     used label, refund permanently blocked.
+    //   - "label has expired" → past UPS's 30-day window.
+    const epMessages = Array.isArray(shipment.messages)
+      ? shipment.messages
+          .map((m) => (typeof m === "string" ? m : m?.message))
+          .filter(Boolean)
+          .join("; ")
+      : "";
+    const reason = epMessages
+      ? `EasyPost refused the refund: ${epMessages}`
+      : "EasyPost refused the refund (no detail returned).";
+    const sameUtcDay = /same.*date|same.*day|created.*today/i.test(epMessages);
+    const hint = sameUtcDay
+      ? " — this label was purchased on a previous UTC day. Refund manually " +
+        "via the EasyPost dashboard (Shipments → find tracking → Request " +
+        "Refund), which uses UPS's 30-day window."
+      : " — most often UPS already scanned the package, in which case the " +
+        "wallet stays debited.";
     return NextResponse.json(
-      {
-        error:
-          "EasyPost refused the refund. Most common cause: UPS has already " +
-          "scanned the package, so the label can't be refunded.",
-        easypost: shipment,
-      },
+      { error: reason + hint, easypost: shipment },
       { status: 502 }
     );
   }
