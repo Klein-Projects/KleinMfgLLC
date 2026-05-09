@@ -197,17 +197,44 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ── Fetch the actual ZPL text ────────────────────────────
-  // When label_format=ZPL is requested, EasyPost generates BOTH the carrier
-  // default (PNG for UPS, exposed as label_url) AND the ZPL version (exposed
-  // as label_zpl_url). We need the ZPL one — fetching label_url silently
-  // returns PNG bytes, which Zebra printers can't interpret as commands and
-  // which display as binary garbage when opened in any text viewer.
-  const labelZplUrl = bought.postage_label.label_zpl_url;
+  // ── Resolve the ZPL URL ──────────────────────────────────
+  // The UPSDAP aggregator (which gives us the discounted UPS Wallet rates)
+  // returns only a PNG label_url at buy time — label_zpl_url is null even
+  // though we requested label_format=ZPL. EasyPost's label conversion
+  // endpoint regenerates the existing label in ZPL format for free and
+  // populates label_zpl_url; we call it as a fallback when the buy response
+  // doesn't already include a ZPL URL. Native UPS / USPS / FedEx accounts
+  // typically populate label_zpl_url at buy time and skip this step.
+  let labelZplUrl: string | null | undefined =
+    bought.postage_label.label_zpl_url;
+
+  if (!labelZplUrl) {
+    const convertRes = await easypostFetch(
+      `/shipments/${bought.id}/label?file_format=zpl`,
+      { method: "GET" }
+    );
+    if (convertRes.ok) {
+      try {
+        const converted = (await convertRes.json()) as EasyPostShipment;
+        labelZplUrl = converted.postage_label?.label_zpl_url;
+        if (converted.postage_label) {
+          bought.postage_label = converted.postage_label;
+        }
+      } catch {
+        // fall through to the missing-zpl branch below
+      }
+    } else {
+      console.error(
+        "[buy-label] /label?file_format=zpl conversion failed: HTTP " +
+          convertRes.status
+      );
+    }
+  }
+
   if (!labelZplUrl) {
     console.error(
-      "[buy-label] EasyPost returned no label_zpl_url despite label_format=ZPL",
-      { postage_label: bought.postage_label }
+      "[buy-label] EasyPost returned no label_zpl_url and conversion failed",
+      { shipmentId: bought.id, postage_label: bought.postage_label }
     );
     return NextResponse.json(
       {
@@ -221,6 +248,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // ── Fetch the actual ZPL text ────────────────────────────
   let labelZpl: string;
   try {
     const labelRes = await fetch(labelZplUrl);
