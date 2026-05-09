@@ -36,6 +36,7 @@ interface LeadRow {
   id: string;
   status: string;
   connection_accepted_at: string | null;
+  follow_up_date: string | null;
   email: string | null;
   linkedin_url: string | null;
   linkedin_thread_id: string | null;
@@ -54,6 +55,7 @@ interface LeadRow {
 
 interface ActivityRow {
   lead_id: string;
+  type: string;
   created_at: string;
   direction: "inbound" | "outbound";
   prompt_id: string | null;
@@ -344,7 +346,7 @@ async function fetchEngineInputs(
       .from("leads")
       .select(
         `
-        id, status, connection_accepted_at,
+        id, status, connection_accepted_at, follow_up_date,
         email, linkedin_url, linkedin_thread_id, phone,
         contact:contacts(id, first_name, last_name, title, email, linkedin_url, phone),
         company:companies(id, name)
@@ -380,7 +382,7 @@ async function fetchEngineInputs(
   const [actsRes, shipsRes] = await Promise.all([
     supabase
       .from("activities")
-      .select("lead_id, created_at, direction, prompt_id")
+      .select("lead_id, type, created_at, direction, prompt_id")
       .in("lead_id", leadIds),
     supabase
       .from("shipments")
@@ -426,4 +428,127 @@ export async function fetchTodayCount(
 ): Promise<number> {
   const cards = await fetchTodayQueue(supabase, options);
   return cards.length;
+}
+
+// ── Contract adapter (GET /api/today-queue) ─────────────────────────────
+//
+// The Cowork-facing endpoint takes the same engine output and reshapes it
+// to the API contract documented in docs/api.md (originally Appendix A
+// of the build plan). Differences vs. the in-portal TodayCard:
+//   - flat shape (no nested rule/trigger/contact)
+//   - first_name + name (combined "First Last")
+//   - days_overdue may be 0 or negative for cards rendered in advance
+//     (the contract uses days_overdue >= 0 by definition)
+//   - channel uses the contract's stricter rule: "email" only when the
+//     lead has a populated email AND a prior email activity exists;
+//     defaults to "linkedin" otherwise
+//   - portal_url deep-links to a card anchor on /portal/today
+//   - follow_up_date is the lead-level fallback date (manual/legacy)
+
+export interface ContractCard {
+  lead_id: string;
+  name: string;
+  first_name: string;
+  company: string | null;
+  title: string | null;
+  status: string;
+  days_overdue: number;
+  follow_up_date: string | null;
+  linkedin_url: string | null;
+  linkedin_thread_id: string | null;
+  email: string | null;
+  channel: "linkedin" | "email";
+  recommended_prompt: {
+    id: string;
+    title: string;
+    category: string;
+    body_personalized: string;
+  };
+  portal_url: string;
+}
+
+export interface ContractQueue {
+  date: string;
+  total: number;
+  queue: ContractCard[];
+}
+
+const PROMPT_CATEGORY_LABELS_FOR_CONTRACT: Record<string, string> = {
+  first_contact:   "First Contact",
+  follow_up:       "Follow-Up",
+  no_reply:        "No Reply",
+  sample_followup: "Sample Follow-Up",
+  won:             "Closed/Won",
+  nurture:         "Nurture",
+};
+
+interface AdapterContext {
+  cards: TodayCard[];
+  leadsById: Map<string, LeadRow>;
+  activitiesByLead: Map<string, ActivityRow[]>;
+  baseUrl: string;
+  date: string;
+  limit: number;
+}
+
+function adaptToContract(ctx: AdapterContext): ContractQueue {
+  const { cards, leadsById, activitiesByLead, baseUrl, date, limit } = ctx;
+
+  const queue: ContractCard[] = cards.slice(0, limit).map((card) => {
+    const lead = leadsById.get(card.lead_id);
+    const acts = activitiesByLead.get(card.lead_id) ?? [];
+    const hasEmailField = !!card.email;
+    const hasPriorEmailActivity = acts.some((a) => a.type === "email");
+
+    const channel: "linkedin" | "email" =
+      hasEmailField && hasPriorEmailActivity ? "email" : "linkedin";
+
+    return {
+      lead_id: card.lead_id,
+      name: card.contact.full_name,
+      first_name: card.contact.first_name,
+      company: card.company_name,
+      title: card.contact.title,
+      status: card.status,
+      days_overdue: Math.max(0, card.trigger.days_overdue),
+      follow_up_date: lead?.follow_up_date ?? null,
+      linkedin_url: card.linkedin_url,
+      linkedin_thread_id: card.linkedin_thread_id,
+      email: card.email,
+      channel,
+      recommended_prompt: {
+        id: card.recommended_prompt.id,
+        title: card.recommended_prompt.title,
+        category:
+          PROMPT_CATEGORY_LABELS_FOR_CONTRACT[card.recommended_prompt.category] ??
+          card.recommended_prompt.category,
+        body_personalized: card.recommended_prompt.body_personalized,
+      },
+      portal_url: `${baseUrl}/portal/today#lead-${card.lead_id}`,
+    };
+  });
+
+  return { date, total: cards.length, queue };
+}
+
+export async function fetchContractQueue(
+  supabase: SupabaseClient,
+  options: { todayISO?: string; limit?: number; baseUrl: string },
+): Promise<ContractQueue> {
+  const todayISO = options.todayISO ?? todayInNY();
+  const limit = options.limit ?? 25;
+  const inputs = await fetchEngineInputs(supabase, todayISO);
+  const cards = evaluateQueue(inputs);
+
+  const leadsById = new Map<string, LeadRow>();
+  for (const lead of inputs.leads) leadsById.set(lead.id, lead);
+
+  return adaptToContract({
+    cards,
+    leadsById,
+    activitiesByLead: inputs.activitiesByLead,
+    baseUrl: options.baseUrl,
+    date: todayISO,
+    limit,
+  });
 }
