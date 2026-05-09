@@ -70,16 +70,16 @@ export default function SiteFooter() {
         </div>
       </div>
 
-      {/* Bottom bar */}
+      {/* Bottom bar — left-aligned so a centered overlay (e.g. Wispr Flow)
+          can't block the Portal Login link. */}
       <div className="border-t border-white/10">
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-          <p className="text-center text-xs text-steel/70">
+          <p className="text-xs text-steel/70">
             &copy; 2026 Klein Manufacturing, LLC. All rights reserved.
-          </p>
-          <p className="mt-2 text-center">
+            <span className="mx-2 text-steel/40">·</span>
             <Link
               href="/portal/login"
-              className="text-xs text-gray-500 transition-colors hover:text-steel"
+              className="text-gray-500 transition-colors hover:text-steel"
             >
               Portal Login
             </Link>

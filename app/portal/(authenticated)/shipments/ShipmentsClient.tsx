@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Search, Truck, Inbox } from "lucide-react";
 import WebOrdersTab from "./WebOrdersTab";
 import SampleTrackingTab from "./SampleTrackingTab";
+import PrinterStatusWidget from "./PrinterStatusWidget";
 
 export type WebOrderRow = {
   id: string;
@@ -114,15 +115,18 @@ export default function ShipmentsClient({
     <div className="p-6 lg:p-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-navy">Shipments</h1>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-steel" />
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search order # or customer…"
-            className="w-72 rounded-md border border-navy/20 bg-white py-2.5 pl-9 pr-3 text-sm text-charcoal placeholder:text-steel focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
-          />
+        <div className="flex flex-wrap items-center gap-3">
+          <PrinterStatusWidget />
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-steel" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search order # or customer…"
+              className="w-72 rounded-md border border-navy/20 bg-white py-2.5 pl-9 pr-3 text-sm text-charcoal placeholder:text-steel focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+            />
+          </div>
         </div>
       </div>
 

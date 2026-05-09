@@ -16,6 +16,11 @@ import {
 } from "lucide-react";
 import { revalidateShipments } from "./actions";
 import type { WebOrderRow } from "./ShipmentsClient";
+import {
+  base64ToBytes,
+  getConnectionState,
+  printZplBytes,
+} from "@/lib/webusb-print";
 
 const SCRAPER_OZ_6 = 6;
 const SCRAPER_OZ_11 = 9;
@@ -59,6 +64,32 @@ export default function FulfillmentRow({ order }: { order: WebOrderRow }) {
   const isPending = order.shipping_status === "pending";
   const isLabelReady = order.shipping_status === "label_purchased";
 
+  // Try direct USB print via the connected Zebra. Returns true if the
+  // bytes made it onto the printer; false if no printer is connected
+  // (callers should fall back to the file-download path). Throws only
+  // for transient errors that the caller can show to the user.
+  async function tryDirectPrintBase64(base64: string): Promise<boolean> {
+    const state = await getConnectionState();
+    if (state.kind !== "connected") return false;
+    const bytes = base64ToBytes(base64);
+    await printZplBytes(bytes);
+    return true;
+  }
+
+  async function tryDirectPrintFromEndpoint(): Promise<boolean> {
+    const state = await getConnectionState();
+    if (state.kind !== "connected") return false;
+    const res = await fetch(`/api/portal/shipments/${order.id}/label`);
+    if (!res.ok) {
+      throw new Error(
+        `Could not fetch label for direct print (HTTP ${res.status}).`
+      );
+    }
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    await printZplBytes(bytes);
+    return true;
+  }
+
   async function handleBuyAndPrint() {
     setError(null);
     setBusyAction("buy");
@@ -72,7 +103,21 @@ export default function FulfillmentRow({ order }: { order: WebOrderRow }) {
       if (!res.ok || !json.ok) {
         throw new Error(json.error ?? `Request failed (${res.status}).`);
       }
-      downloadLabel(order.id);
+      // Direct USB print if a Zebra is connected; otherwise fall back
+      // to the existing file-download path so the user is never stuck.
+      let printed = false;
+      if (typeof json.label_zpl_base64 === "string") {
+        try {
+          printed = await tryDirectPrintBase64(json.label_zpl_base64);
+        } catch (printErr) {
+          setError(
+            "Label was bought, but direct print failed: " +
+              (printErr instanceof Error ? printErr.message : String(printErr)) +
+              " — downloading the file instead."
+          );
+        }
+      }
+      if (!printed) downloadLabel(order.id);
       await revalidateShipments();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Buy & print failed.");
@@ -81,8 +126,24 @@ export default function FulfillmentRow({ order }: { order: WebOrderRow }) {
     }
   }
 
-  function handleReprint() {
-    downloadLabel(order.id);
+  async function handleReprint() {
+    setError(null);
+    setBusyAction("reprint");
+    try {
+      let printed = false;
+      try {
+        printed = await tryDirectPrintFromEndpoint();
+      } catch (printErr) {
+        setError(
+          "Direct print failed: " +
+            (printErr instanceof Error ? printErr.message : String(printErr)) +
+            " — downloading the file instead."
+        );
+      }
+      if (!printed) downloadLabel(order.id);
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   async function handleMarkShipped() {
@@ -179,7 +240,9 @@ export default function FulfillmentRow({ order }: { order: WebOrderRow }) {
                 className="inline-flex items-center gap-1.5 rounded-md bg-red px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-red/90 disabled:opacity-50"
               >
                 <Printer className="h-3.5 w-3.5" />
-                {busyAction === "buy" ? "Buying…" : "Buy & Print Label"}
+                {busyAction === "buy"
+                  ? "Buying & printing…"
+                  : "Buy & Print Label"}
               </button>
             )}
             {isLabelReady && (
@@ -188,10 +251,10 @@ export default function FulfillmentRow({ order }: { order: WebOrderRow }) {
                   onClick={handleReprint}
                   disabled={busy}
                   className="inline-flex items-center gap-1.5 rounded-md border border-navy/20 bg-white px-3 py-1.5 text-xs font-medium text-navy transition-colors hover:bg-offwhite disabled:opacity-50"
-                  title="Re-download the saved ZPL"
+                  title="Send the saved label to the connected Zebra (or re-download if none connected)"
                 >
                   <Printer className="h-3.5 w-3.5" />
-                  Reprint
+                  {busyAction === "reprint" ? "Reprinting…" : "Reprint"}
                 </button>
                 <button
                   onClick={handleMarkShipped}
