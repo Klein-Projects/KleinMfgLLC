@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, AlertTriangle, ExternalLink, Send, X } from "lucide-react";
+import { Check, AlertTriangle, ExternalLink, ClipboardList, X } from "lucide-react";
 
 interface PromptOption {
   id: string;
@@ -14,12 +14,11 @@ interface CardState {
   url: string;            // normalized URL
   rawUrl: string;         // original pasted form (used to render path)
   promptId: string | null;
-  // Parsed name + headline + company that Sean enters per card. Pre-filled
+  // Parsed name + title + company that Sean enters per card. Pre-filled
   // from the URL slug as a starting point; Sean overrides.
   name: string;
-  headline: string;
-  company: string;
   title: string;
+  company: string;
   // Dedupe lookup result.
   existing: {
     found: boolean;
@@ -27,8 +26,8 @@ interface CardState {
     invitedAt?: string | null;
     name?: string;
   } | null;
-  state: "idle" | "sending" | "sent" | "error";
-  sentAt?: string;
+  state: "idle" | "logging" | "logged" | "error";
+  loggedAt?: string;
   errorMsg?: string;
   leadId?: string;
 }
@@ -107,19 +106,58 @@ function parseUrlBlob(blob: string): string[] {
   return out;
 }
 
-export default function OutreachClient({ prompts }: { prompts: PromptOption[] }) {
+export default function OutreachClient({
+  prompts,
+  titleSuggestions,
+  companySuggestions,
+}: {
+  prompts: PromptOption[];
+  titleSuggestions: string[];
+  companySuggestions: string[];
+}) {
   const [blob, setBlob] = useState("");
   const [cards, setCards] = useState<CardState[]>([]);
   const [defaultPromptId, setDefaultPromptId] = useState<string>(
     prompts.find((p) => p.category === "first_contact")?.id ?? prompts[0]?.id ?? "",
   );
   const [parseError, setParseError] = useState<string>("");
+  // Local additions to the suggestion lists during this session — anything
+  // Sean types in title/company that isn't already in the database, so
+  // sibling cards can pick from them too without a page refresh.
+  const [titleAdds, setTitleAdds] = useState<string[]>([]);
+  const [companyAdds, setCompanyAdds] = useState<string[]>([]);
 
   const promptById = useMemo(() => {
     const m = new Map<string, PromptOption>();
     for (const p of prompts) m.set(p.id, p);
     return m;
   }, [prompts]);
+
+  const allTitles = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const t of [...titleSuggestions, ...titleAdds]) {
+      const key = t.toLowerCase().trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(t);
+    }
+    out.sort((a, b) => a.localeCompare(b));
+    return out;
+  }, [titleSuggestions, titleAdds]);
+
+  const allCompanies = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const c of [...companySuggestions, ...companyAdds]) {
+      const key = c.toLowerCase().trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(c);
+    }
+    out.sort((a, b) => a.localeCompare(b));
+    return out;
+  }, [companySuggestions, companyAdds]);
 
   // ── Parse URLs into cards ──
   async function handleParse() {
@@ -136,9 +174,8 @@ export default function OutreachClient({ prompts }: { prompts: PromptOption[] })
       rawUrl: url,
       promptId: defaultPromptId || null,
       name: nameFromSlug(url),
-      headline: "",
-      company: "",
       title: "",
+      company: "",
       existing: null,
       state: "idle",
     }));
@@ -189,7 +226,7 @@ export default function OutreachClient({ prompts }: { prompts: PromptOption[] })
     if (!defaultPromptId) return;
     setCards((prev) =>
       prev.map((c) =>
-        c.state === "sent" || c.state === "sending"
+        c.state === "logged" || c.state === "logging"
           ? c
           : { ...c, promptId: defaultPromptId },
       ),
@@ -212,10 +249,10 @@ export default function OutreachClient({ prompts }: { prompts: PromptOption[] })
     setCards((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  // ── Send a single card ──
-  async function sendCard(idx: number) {
+  // ── Log a single card ──
+  async function logCard(idx: number) {
     const card = cards[idx];
-    if (!card || card.state === "sending" || card.state === "sent") return;
+    if (!card || card.state === "logging" || card.state === "logged") return;
     if (!card.promptId) {
       setCardField(idx, "errorMsg", "Pick a prompt first.");
       setCardField(idx, "state", "error");
@@ -234,23 +271,41 @@ export default function OutreachClient({ prompts }: { prompts: PromptOption[] })
       return;
     }
     const firstName = card.name.trim().split(/\s+/)[0];
+    // note_text in the API request is what gets stored as the activity
+    // summary — using the personalized prompt body documents which prompt
+    // Sean used. (We no longer copy this to clipboard; this is a logging
+    // tool, not a sending tool.)
     const noteText = personalize(prompt.body, firstName, card.company.trim());
 
-    setCardField(idx, "state", "sending");
+    setCardField(idx, "state", "logging");
     setCardField(idx, "errorMsg", undefined);
 
-    // 1. Copy to clipboard.
-    try {
-      await navigator.clipboard.writeText(noteText);
-    } catch {
-      // Clipboard can fail in some browsers/contexts. Continue anyway —
-      // Sean can still paste from the prompt library if needed.
+    // Capture any newly-typed title / company so they show up in sibling
+    // cards' datalists immediately (and on the next page load, once the
+    // server-side query picks them up from contacts/companies).
+    const trimmedTitle = card.title.trim();
+    const trimmedCompany = card.company.trim();
+    if (
+      trimmedTitle &&
+      !allTitles.some((t) => t.toLowerCase() === trimmedTitle.toLowerCase())
+    ) {
+      setTitleAdds((prev) =>
+        prev.some((t) => t.toLowerCase() === trimmedTitle.toLowerCase())
+          ? prev
+          : [...prev, trimmedTitle],
+      );
+    }
+    if (
+      trimmedCompany &&
+      !allCompanies.some((c) => c.toLowerCase() === trimmedCompany.toLowerCase())
+    ) {
+      setCompanyAdds((prev) =>
+        prev.some((c) => c.toLowerCase() === trimmedCompany.toLowerCase())
+          ? prev
+          : [...prev, trimmedCompany],
+      );
     }
 
-    // 2. Open LinkedIn in a new tab.
-    window.open(card.url, "_blank", "noopener,noreferrer");
-
-    // 3. POST log-invitation.
     try {
       const res = await fetch("/api/leads/log-invitation", {
         method: "POST",
@@ -258,8 +313,8 @@ export default function OutreachClient({ prompts }: { prompts: PromptOption[] })
         body: JSON.stringify({
           linkedin_url: card.url,
           name: card.name.trim(),
-          company: card.company.trim() || null,
-          title: card.title.trim() || null,
+          company: trimmedCompany || null,
+          title: trimmedTitle || null,
           prompt_id: card.promptId,
           note_text: noteText,
           source: "outreach_page",
@@ -273,8 +328,8 @@ export default function OutreachClient({ prompts }: { prompts: PromptOption[] })
         const next = prev.slice();
         next[idx] = {
           ...next[idx],
-          state: "sent",
-          sentAt: new Date().toLocaleTimeString([], {
+          state: "logged",
+          loggedAt: new Date().toLocaleTimeString([], {
             hour: "numeric",
             minute: "2-digit",
           }),
@@ -289,17 +344,17 @@ export default function OutreachClient({ prompts }: { prompts: PromptOption[] })
         next[idx] = {
           ...next[idx],
           state: "error",
-          errorMsg: e instanceof Error ? e.message : "Send failed",
+          errorMsg: e instanceof Error ? e.message : "Logging failed",
         };
         return next;
       });
     }
   }
 
-  const sendableCount = cards.filter(
+  const loggableCount = cards.filter(
     (c) => c.state === "idle" || c.state === "error",
   ).length;
-  const sentCount = cards.filter((c) => c.state === "sent").length;
+  const loggedCount = cards.filter((c) => c.state === "logged").length;
   const invitedCount = cards.filter(
     (c) => c.existing?.found && c.existing?.status === "invited",
   ).length;
@@ -318,13 +373,14 @@ export default function OutreachClient({ prompts }: { prompts: PromptOption[] })
   return (
     <div className="px-6 py-8 lg:px-8">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-navy">Outreach</h1>
+        <h1 className="text-2xl font-bold text-navy">Log connection requests</h1>
         <p className="mt-1 text-sm text-steel">
-          Paste LinkedIn URLs, pick the prompt you&apos;re using, send connection
-          requests. Each send creates the lead with status{" "}
-          <span className="font-semibold text-navy">invited</span> and logs a{" "}
+          Paste URLs of people you just invited on LinkedIn — they become{" "}
+          <span className="font-semibold text-navy">invited</span> leads with
+          the prompt attached and a{" "}
           <span className="font-semibold text-navy">connection_request</span>{" "}
-          activity in real time.
+          activity in the timeline. No connection requests are sent from this
+          page; LinkedIn happens in your other tab.
         </p>
       </div>
 
@@ -393,17 +449,17 @@ export default function OutreachClient({ prompts }: { prompts: PromptOption[] })
           {cards.length > 0 && (
             <span className="ml-auto text-xs text-steel">
               <strong className="text-charcoal">{cards.length} URL{cards.length === 1 ? "" : "s"}</strong>
-              {sentCount > 0 && (
+              {loggedCount > 0 && (
                 <>
                   {" "}·{" "}
-                  <strong className="text-green-700">{sentCount} sent</strong>
+                  <strong className="text-green-700">{loggedCount} logged</strong>
                 </>
               )}
               {invitedCount > 0 && (
                 <>
                   {" "}·{" "}
                   <strong className="text-amber-700">
-                    {invitedCount} already invited
+                    {invitedCount} already in portal
                   </strong>
                 </>
               )}
@@ -411,6 +467,20 @@ export default function OutreachClient({ prompts }: { prompts: PromptOption[] })
           )}
         </div>
       </section>
+
+      {/* Shared datalists — one each for titles and companies, referenced by
+          all cards. Native HTML autocomplete: shows existing values when the
+          field is focused; allows typing anything new. */}
+      <datalist id="outreach-title-list">
+        {allTitles.map((t) => (
+          <option key={t} value={t} />
+        ))}
+      </datalist>
+      <datalist id="outreach-company-list">
+        {allCompanies.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
 
       {/* ── Cards grid ── */}
       {cards.length === 0 ? (
@@ -424,20 +494,19 @@ export default function OutreachClient({ prompts }: { prompts: PromptOption[] })
             <Card
               key={c.url + i}
               card={c}
-              prompts={prompts}
               promptGroups={promptGroups}
               onChangeField={(k, v) => setCardField(i, k, v)}
-              onSend={() => sendCard(i)}
+              onLog={() => logCard(i)}
               onRemove={() => removeCard(i)}
             />
           ))}
         </div>
       )}
 
-      {sendableCount > 0 && cards.length > 1 && (
+      {loggableCount > 0 && cards.length > 1 && (
         <div className="mt-4 text-xs text-steel">
-          Tip: send one at a time so LinkedIn doesn&apos;t flag the activity as
-          bot-like.
+          Tip: title and company drop down with values you&apos;ve used before.
+          Type a new one and it joins the list for next time.
         </div>
       )}
     </div>
@@ -448,29 +517,30 @@ export default function OutreachClient({ prompts }: { prompts: PromptOption[] })
 
 function Card({
   card,
-  prompts,
   promptGroups,
   onChangeField,
-  onSend,
+  onLog,
   onRemove,
 }: {
   card: CardState;
-  prompts: PromptOption[];
   promptGroups: Array<[string, PromptOption[]]>;
   onChangeField: <K extends keyof CardState>(key: K, value: CardState[K]) => void;
-  onSend: () => void;
+  onLog: () => void;
   onRemove: () => void;
 }) {
-  const sent = card.state === "sent";
-  const sending = card.state === "sending";
+  const logged = card.state === "logged";
+  const logging = card.state === "logging";
   const error = card.state === "error";
   const alreadyInvited =
     card.existing?.found && card.existing?.status === "invited";
 
+  const fieldClass =
+    "block w-full rounded-md border border-navy/15 bg-white px-2 py-1 text-sm text-charcoal outline-none transition focus:border-navy focus:ring-2 focus:ring-navy/20 disabled:cursor-not-allowed disabled:bg-offwhite disabled:text-steel";
+
   return (
     <article
       className={`flex flex-col gap-3 rounded-lg border bg-white p-4 shadow-sm transition ${
-        sent
+        logged
           ? "border-navy/10 bg-offwhite opacity-90"
           : error
             ? "border-red/40"
@@ -482,33 +552,35 @@ function Card({
           {(card.name.trim().split(/\s+/)[0]?.[0] ?? "?").toUpperCase()}
           {(card.name.trim().split(/\s+/)[1]?.[0] ?? "").toUpperCase()}
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 space-y-1">
           <input
             type="text"
             value={card.name}
             onChange={(e) => onChangeField("name", e.target.value)}
-            disabled={sent || sending}
+            disabled={logged || logging}
             placeholder="First Last"
-            className="block w-full rounded-md border border-transparent bg-transparent px-1 py-0.5 text-sm font-bold text-navy outline-none transition hover:border-navy/20 focus:border-navy focus:bg-white focus:ring-2 focus:ring-navy/20"
+            className={`${fieldClass} text-sm font-bold text-navy`}
           />
           <input
             type="text"
             value={card.title}
             onChange={(e) => onChangeField("title", e.target.value)}
-            disabled={sent || sending}
+            disabled={logged || logging}
             placeholder="Title (e.g. Director of Maintenance)"
-            className="mt-0.5 block w-full rounded-md border border-transparent bg-transparent px-1 py-0.5 text-xs text-steel outline-none transition hover:border-navy/20 focus:border-navy focus:bg-white focus:ring-2 focus:ring-navy/20"
+            list="outreach-title-list"
+            className={fieldClass}
           />
           <input
             type="text"
             value={card.company}
             onChange={(e) => onChangeField("company", e.target.value)}
-            disabled={sent || sending}
+            disabled={logged || logging}
             placeholder="Company"
-            className="mt-0.5 block w-full rounded-md border border-transparent bg-transparent px-1 py-0.5 text-xs text-steel outline-none transition hover:border-navy/20 focus:border-navy focus:bg-white focus:ring-2 focus:ring-navy/20"
+            list="outreach-company-list"
+            className={fieldClass}
           />
         </div>
-        {!sent && !sending && (
+        {!logged && !logging && (
           <button
             type="button"
             onClick={onRemove}
@@ -533,7 +605,7 @@ function Card({
       {alreadyInvited && (
         <div className="flex items-center gap-1.5 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-700">
           <AlertTriangle className="h-3.5 w-3.5" />
-          Already invited
+          Already in portal — invited
           {card.existing?.invitedAt && (
             <span className="ml-auto font-normal text-amber-600">
               {new Date(card.existing.invitedAt).toLocaleDateString([], {
@@ -545,19 +617,19 @@ function Card({
         </div>
       )}
 
-      {sent ? (
+      {logged ? (
         <div className="flex items-center gap-2 rounded-md bg-green-50 px-2.5 py-2 text-xs font-semibold text-green-700">
           <span className="flex h-4 w-4 items-center justify-center rounded-full bg-green-600 text-[10px] font-bold text-white">
             <Check className="h-3 w-3" strokeWidth={3} />
           </span>
-          Connection request sent · {card.sentAt}
+          Logged · {card.loggedAt}
         </div>
       ) : (
         <div className="border-t border-navy/10 pt-3">
           <select
             value={card.promptId ?? ""}
             onChange={(e) => onChangeField("promptId", e.target.value || null)}
-            disabled={sending}
+            disabled={logging}
             className="mb-2 w-full rounded-md border border-navy/20 bg-white px-2.5 py-1.5 text-sm text-charcoal outline-none focus:border-navy focus:ring-2 focus:ring-navy/20"
           >
             <option value="">— Pick a prompt —</option>
@@ -577,23 +649,23 @@ function Card({
 
           <button
             type="button"
-            onClick={onSend}
-            disabled={sending || !card.promptId}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-red px-3 py-2 text-sm font-bold text-white transition hover:bg-red/90 disabled:cursor-not-allowed disabled:bg-steel/40"
+            onClick={onLog}
+            disabled={logging || !card.promptId}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-navy px-3 py-2 text-sm font-bold text-white transition hover:bg-navy/90 disabled:cursor-not-allowed disabled:bg-steel/40"
           >
-            {sending ? (
-              "Sending…"
+            {logging ? (
+              "Logging…"
             ) : (
               <>
-                <Send className="h-3.5 w-3.5" />
-                {alreadyInvited ? "Send anyway" : "Send connection request"}
+                <ClipboardList className="h-3.5 w-3.5" />
+                {alreadyInvited ? "Log anyway" : "Log invitation"}
               </>
             )}
           </button>
 
           {error && card.errorMsg && (
             <div className="mt-2 rounded-md border border-red/30 bg-red/5 px-2.5 py-2 text-xs text-red">
-              <strong>Send failed.</strong> {card.errorMsg}
+              <strong>Failed.</strong> {card.errorMsg}
             </div>
           )}
         </div>
