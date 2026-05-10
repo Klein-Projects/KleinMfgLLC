@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useTransition } from "react";
 import Link from "next/link";
-import { Search, Plus, Copy, Check } from "lucide-react";
+import { Search, Plus, Copy, Check, BarChart3 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { incrementUseCount } from "./actions";
+import type { PromptAnalyticsRow } from "@/lib/portal/prompt-analytics";
 
 type Category =
   | "first_contact"
@@ -53,6 +54,7 @@ const categoryLabels: Record<string, string> = {
 
 export default function PromptLibraryPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [analytics, setAnalytics] = useState<Record<string, PromptAnalyticsRow>>({});
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState<Category | "all">("all");
   const [search, setSearch] = useState("");
@@ -70,6 +72,17 @@ export default function PromptLibraryPage() {
         setTemplates((data as Template[]) ?? []);
         setLoading(false);
       });
+  }, []);
+
+  useEffect(() => {
+    // Analytics is non-blocking — cards render immediately, badges
+    // pop in once the metrics arrive.
+    fetch("/api/prompt-analytics")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.byId) setAnalytics(data.byId);
+      })
+      .catch(() => {});
   }, []);
 
   // Category counts
@@ -108,15 +121,24 @@ export default function PromptLibraryPage() {
 
   return (
     <div className="p-6 lg:p-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold text-navy">Prompt Library</h1>
-        <Link
-          href="/portal/prompts/new"
-          className="inline-flex items-center gap-2 rounded-md bg-red px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red/90"
-        >
-          <Plus className="h-4 w-4" />
-          Add Template
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/portal/prompts/analytics"
+            className="inline-flex items-center gap-2 rounded-md border border-navy/20 bg-white px-3 py-2 text-sm font-semibold text-navy transition-colors hover:border-navy hover:bg-navy/5"
+          >
+            <BarChart3 className="h-4 w-4" />
+            Analytics
+          </Link>
+          <Link
+            href="/portal/prompts/new"
+            className="inline-flex items-center gap-2 rounded-md bg-red px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red/90"
+          >
+            <Plus className="h-4 w-4" />
+            Add Template
+          </Link>
+        </div>
       </div>
 
       <div className="mt-6 flex gap-6">
@@ -193,20 +215,40 @@ export default function PromptLibraryPage() {
             </p>
           ) : (
             <div className="mt-4 grid gap-4 md:grid-cols-2">
-              {filtered.map((template) => (
+              {filtered.map((template) => {
+                const stats = analytics[template.id];
+                return (
                 <div
                   key={template.id}
                   className="rounded-lg border border-navy/10 bg-white p-5 shadow-sm"
                 >
-                  {/* Category badge */}
-                  <span
-                    className={`inline-block rounded px-2 py-0.5 text-[11px] font-medium ${
-                      categoryBadgeColors[template.category] ??
-                      "bg-gray-100 text-gray-800"
-                    }`}
-                  >
-                    {categoryLabels[template.category] ?? template.category}
-                  </span>
+                  {/* Category badge + performance badges */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span
+                      className={`inline-block rounded px-2 py-0.5 text-[11px] font-medium ${
+                        categoryBadgeColors[template.category] ??
+                        "bg-gray-100 text-gray-800"
+                      }`}
+                    >
+                      {categoryLabels[template.category] ?? template.category}
+                    </span>
+                    {stats?.badges.show_reply_rate && stats.reply_rate !== null && (
+                      <span
+                        className="inline-block rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800"
+                        title={`${stats.reply_count} of ${stats.leads_used} leads replied after this prompt`}
+                      >
+                        +{Math.round(stats.reply_rate * 100)}% reply rate
+                      </span>
+                    )}
+                    {stats?.badges.show_accept_rate && stats.accept_rate !== null && (
+                      <span
+                        className="inline-block rounded bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-800"
+                        title={`${stats.accepted_count} of ${stats.leads_used} leads accepted the connection request`}
+                      >
+                        +{Math.round(stats.accept_rate * 100)}% accept rate
+                      </span>
+                    )}
+                  </div>
 
                   {/* Title */}
                   <Link
@@ -251,7 +293,8 @@ export default function PromptLibraryPage() {
                     </button>
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           )}
         </div>

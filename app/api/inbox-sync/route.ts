@@ -183,6 +183,29 @@ function validateProposal(
         error: `proposal[${index}] set_wake_up needs lead_id, linkedin_thread_id, or linkedin_url`,
       };
     }
+    // Used by the deep historical sweep to park long-cold leads. The
+    // payload must spell out the wake-up target so a reviewer can
+    // see at a glance how long the proposal would shelve the lead.
+    const rawWake = (payload as Record<string, unknown>).wake_up_at;
+    if (rawWake === null) {
+      // Explicit unpark proposal — fine.
+    } else if (typeof rawWake !== "string" || !rawWake.trim()) {
+      return {
+        ok: false,
+        error: `proposal[${index}] set_wake_up payload must include wake_up_at (ISO date or null)`,
+      };
+    } else {
+      const w = rawWake.trim();
+      const d = /^\d{4}-\d{2}-\d{2}$/.test(w)
+        ? new Date(w + "T00:00:00.000Z")
+        : new Date(w);
+      if (Number.isNaN(d.getTime())) {
+        return {
+          ok: false,
+          error: `proposal[${index}] set_wake_up wake_up_at is not a valid ISO date/datetime`,
+        };
+      }
+    }
   }
   if (kind === "update_contact") {
     if (!leadId && !linkedinThreadId && !linkedinUrl) {

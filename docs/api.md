@@ -411,6 +411,28 @@ When a `new_lead` proposal resolves to an existing non-invited lead,
 it's silently demoted to `new_activity`. The original kind is
 preserved in `payload.demoted_from`.
 
+### `set_wake_up` proposals (Phase 3 deep sweep)
+
+The deep historical sweep uses `kind: "set_wake_up"` to park
+long-cold leads it finds during the one-time walk through Sean's
+LinkedIn presence. Payload shape:
+
+```json
+{
+  "kind": "set_wake_up",
+  "lead_id": "uuid",                  // OR linkedin_thread_id / linkedin_url
+  "payload": {
+    "wake_up_at":     "2026-08-09",   // ISO date or full ISO datetime, or null to unpark
+    "wake_up_reason": "No reply since Q4 2025 — wait for Q3 budget"
+  }
+}
+```
+
+The endpoint validates `wake_up_at` is a parseable ISO date/datetime
+or explicitly `null`. The indefinite-park sentinel `2999-12-31` is
+accepted — the approve endpoint uses it to drop the lead into the
+"Parked indefinitely" pile on `/portal/leads`.
+
 ### Side effect
 
 Every resolved lead gets `last_inbox_sync_at = observed_at` so the
@@ -536,7 +558,93 @@ Cookie session.
 
 ---
 
+## `GET /api/weekly-stats` — Phase 3
+
+Cowork-facing read endpoint. The Sunday 7pm ET digest task hits
+this once a week to render Sean's recap email.
+
+### Auth
+
+`Authorization: Bearer <COWORK_API_TOKEN>`. Same env var as the
+other Cowork-facing endpoints.
+
+### Query params
+
+| Name | Values | Notes |
+|------|--------|-------|
+| `week` | `last` (default), `current`, `YYYY-MM-DD` | `last` = last full Mon-Sun window that has fully ended. `current` = Monday of this week through "now". A specific date returns the Mon-Sun window containing that date. Weeks are evaluated in UTC. |
+
+### Response — `200 OK`
+
+```json
+{
+  "week": {
+    "start": "2026-05-04",
+    "end":   "2026-05-10",
+    "label": "Week of May 4"
+  },
+  "outreach": {
+    "connection_requests_sent": 18,
+    "connections_accepted":      7,
+    "accept_rate":               0.3888
+  },
+  "engagement": {
+    "outbound_messages":  32,
+    "inbound_replies":    11,
+    "reply_rate":         0.3437
+  },
+  "samples": {
+    "sample_requests_received": 3,
+    "shipments_sent":           5,
+    "shipments_delivered":      4
+  },
+  "pipeline": {
+    "leads_created":  22,
+    "leads_parked":   3,
+    "current_status_counts": {
+      "new": 12, "invited": 18, "contacted": 24, "engaged": 6,
+      "sample_sent": 8, "quoted": 2, "won": 4, "lost": 9, "nurture": 1
+    }
+  },
+  "top_prompts": [
+    {
+      "prompt_id":               "uuid",
+      "title":                   "First Contact — Aviation MRO Cold Note",
+      "category":                "first_contact",
+      "uses_this_week":          12,
+      "leads_touched_this_week": 12,
+      "replies_this_week":       4,
+      "reply_rate_this_week":    0.3333
+    }
+  ]
+}
+```
+
+### Field semantics
+
+- **`outreach.connection_requests_sent`** counts `activities` rows
+  with `type='connection_request'` and `direction='outbound'` whose
+  `created_at` falls in the window.
+- **`outreach.connections_accepted`** counts leads whose
+  `connection_accepted_at` falls in the window — the lead may or
+  may not have been created in the same week.
+- **`accept_rate`** is `null` when no connection requests were sent.
+- **`engagement.outbound_messages`** counts `activities` of type
+  `linkedin_message`, `email`, or `follow_up` with
+  `direction='outbound'` in the window.
+- **`engagement.inbound_replies`** counts `activities` with
+  `direction='inbound'` in the window.
+- **`pipeline.current_status_counts`** is the snapshot of every
+  `leads.status` value as of the request, not the count *into*
+  each status during the week.
+- **`top_prompts`** is at most 5 entries, ranked by `uses_this_week`
+  descending. Per-prompt `reply_rate_this_week` is scoped to leads
+  the prompt's outbound activity touched in the window.
+
+---
+
 ## Future endpoints
 
-`GET /api/weekly-stats`, etc. are documented in the Phase 3
-build-plan appendix and will land in this doc as that phase ships.
+Phase 3's deep-sweep task uses the existing `POST /api/inbox-sync`
+endpoint with `kind=set_wake_up` proposals; see the inbox-sync
+section above for the payload contract.
