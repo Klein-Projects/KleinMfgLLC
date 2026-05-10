@@ -18,18 +18,24 @@ export default async function PortalLayout({
     redirect("/portal/login");
   }
 
-  const [{ count: reviewCount }, todayCount] = await Promise.all([
-    supabase
-      .from("web_order_review")
-      .select("id", { count: "exact", head: true })
-      .eq("resolved", false),
-    fetchTodayCount(supabase),
-  ]);
+  const [{ count: reviewCount }, { count: reviewQueueCount }, todayCount] =
+    await Promise.all([
+      supabase
+        .from("web_order_review")
+        .select("id", { count: "exact", head: true })
+        .eq("resolved", false),
+      supabase
+        .from("review_queue")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "pending"),
+      fetchTodayCount(supabase),
+    ]);
 
   return (
     <PortalShell
       userEmail={user.email ?? ""}
       reviewCount={reviewCount ?? 0}
+      reviewQueueCount={reviewQueueCount ?? 0}
       todayCount={todayCount}
     >
       {children}

@@ -347,8 +347,196 @@ Cookie session.
 
 ---
 
+## `POST /api/inbox-sync` — Phase 2
+
+Cowork-facing write endpoint. The 7am LinkedIn DM scraper posts a
+batch of proposals derived from walking Sean's DM inbox. Every
+proposal lands in `review_queue` with `status='pending'` — never
+auto-applied. Sean approves from `/portal/review-queue`.
+
+### Auth
+
+`Authorization: Bearer <COWORK_API_TOKEN>`. Same env var the rest
+of the Cowork-facing endpoints use.
+
+### Request body
+
+```json
+{
+  "observed_at": "2026-05-09T07:00:00-07:00",
+  "proposals": [
+    {
+      "kind": "new_activity",
+      "linkedin_thread_id": "2-NjFhYjIxNDE...",
+      "linkedin_url": "https://www.linkedin.com/in/joseph-pisciotta",
+      "payload": {
+        "type": "linkedin_message",
+        "summary": "Thanks Sean — happy to take a look.",
+        "direction": "inbound",
+        "first_message_excerpt": "Thanks Sean — happy to take a look.",
+        "first_message_direction": "inbound",
+        "first_message_at": "2026-05-09T06:42:00Z"
+      }
+    }
+  ]
+}
+```
+
+`kind` is one of `new_lead`, `new_activity`, `stage_change`,
+`update_contact`, `set_wake_up`. The endpoint accepts any combination
+of `lead_id`, `linkedin_thread_id`, and `linkedin_url` for matching;
+pass whatever the scraper has. The endpoint resolves leads in this
+order: `lead_id` → `linkedin_thread_id` → lead-level `linkedin_url`
+→ contact-level `linkedin_url`.
+
+### Invited-lead reconciliation
+
+When a `new_lead` or `new_activity` proposal resolves to an existing
+lead with `status='invited'`, the endpoint synthesizes an additional
+`stage_change` proposal advancing the lead from `invited` to:
+
+- `engaged` when `payload.first_message_direction === "inbound"`
+  (the prospect actually replied), or
+- `contacted` otherwise (we sent a follow-up after they accepted but
+  they haven't said anything back yet).
+
+The synthesized row is tagged `payload.reconciled_from = "invited_thread_match"`
+and `payload.set_connection_accepted_at = observed_at`, so the
+review-queue UI can call it out distinctly and the `approve` endpoint
+stamps `connection_accepted_at` correctly.
+
+### Demote `new_lead` → `new_activity`
+
+When a `new_lead` proposal resolves to an existing non-invited lead,
+it's silently demoted to `new_activity`. The original kind is
+preserved in `payload.demoted_from`.
+
+### Side effect
+
+Every resolved lead gets `last_inbox_sync_at = observed_at` so the
+next scrape can pull incrementally.
+
+### Response — `200 OK`
+
+```json
+{
+  "observed_at": "2026-05-09T07:00:00-07:00",
+  "total": 12,
+  "inserted": 9,
+  "skipped": { "existing_proposal": 3 },
+  "inserted_ids": ["uuid", "uuid", ...],
+  "reconciled": [
+    {
+      "source_kind": "new_activity",
+      "lead_id": "uuid",
+      "from_status": "invited",
+      "to_status": "engaged"
+    }
+  ]
+}
+```
+
+### Errors
+
+| Status | Body | When |
+|--------|------|------|
+| `400`  | `{ error: "observed_at is required ..." }` | Missing or malformed top-level fields. |
+| `400`  | `{ error: "validation failed", details: [{index, error}] }` | A row in `proposals[]` is malformed. |
+| `401`  | `{ error: "Unauthorized" }` | Missing or wrong Bearer token. |
+| `500`  | `{ error: "Server not configured ..." }` | `COWORK_API_TOKEN`, `NEXT_PUBLIC_SUPABASE_URL`, or `SUPABASE_SERVICE_ROLE_KEY` not set. |
+
+---
+
+## `POST /api/review-queue/:id/approve` — Phase 2
+
+Applies a pending `review_queue` row to production tables. Sean
+clicks Approve from `/portal/review-queue`.
+
+### Auth
+
+Cookie session.
+
+### Per-kind effects
+
+- **`new_lead`** — creates a company (when `payload.company` is given
+  and an exact-name match doesn't exist), a contact, and a lead with
+  `status = payload.proposed_status` (defaults to `invited`). Stamps
+  `invited_at` when the proposed status is `invited`, or
+  `connection_accepted_at` when `contacted` / `engaged` / `sample_sent`.
+- **`new_activity`** — appends an `activities` row to the matched
+  lead with `source = 'dm_inbox_scraper'`. Backfills
+  `leads.linkedin_thread_id` when the proposal had one and the lead
+  didn't.
+- **`stage_change`** — updates `leads.status` to `payload.to_status`.
+  When `payload.set_connection_accepted_at` is set (typically from
+  the invited-thread reconciliation), stamps
+  `leads.connection_accepted_at`. Backfills `linkedin_thread_id`
+  when missing.
+- **`update_contact`** — updates the lead's contact row. Accepted
+  fields: `email`, `phone`, `title`, `linkedin_url`, `first_name`,
+  `last_name`. Read from `payload.updates` if present, otherwise
+  the top-level payload.
+- **`set_wake_up`** — sets `leads.wake_up_at` and `wake_up_reason`.
+  Pass `payload.wake_up_at = null` to unpark.
+
+### Response — `200 OK`
+
+```json
+{
+  "ok": true,
+  "id": "uuid",
+  "kind": "stage_change",
+  "decided_at": "2026-05-09T14:32:00.000Z",
+  "applied": { "lead_id": "uuid", "from_status": "invited", "to_status": "engaged" }
+}
+```
+
+### Errors
+
+| Status | Body | When |
+|--------|------|------|
+| `400`  | `{ error: <message> }` | Invalid payload (e.g. unknown `to_status`, missing `name` on `new_lead`). |
+| `401`  | `{ error: "Unauthorized" }` | No portal session. |
+| `404`  | `{ error: "Review queue row not found" }` | Bad `:id`. |
+| `409`  | `{ error: "Already approved", decided_at, decided_by }` | Row was already decided. |
+| `409`  | `{ error: "Lead already exists for that linkedin_url", lead_id }` | A `new_lead` row matched a lead created since the proposal landed. |
+| `422`  | `{ error: "Cannot apply ... — no matching lead found" }` | Non-`new_lead` row that no longer resolves to a lead. |
+| `500`  | `{ error: <message> }` | DB error during apply. The row stays pending so a retry is possible after fixing the underlying state. |
+
+---
+
+## `POST /api/review-queue/:id/reject` — Phase 2
+
+Marks a pending `review_queue` row `status='rejected'` with no side
+effects on production tables. Used when the scraper got it wrong
+(recruiter spam, duplicate, mis-classification).
+
+### Auth
+
+Cookie session.
+
+### Response — `200 OK`
+
+```json
+{
+  "ok": true,
+  "id": "uuid",
+  "kind": "new_lead",
+  "decided_at": "2026-05-09T14:33:00.000Z"
+}
+```
+
+### Errors
+
+| Status | Body | When |
+|--------|------|------|
+| `401`  | `{ error: "Unauthorized" }` | No portal session. |
+| `404`  | `{ error: "Review queue row not found" }` | Bad `:id`. |
+| `409`  | `{ error: "Already approved" }` | Row was already decided. |
+
+---
+
 ## Future endpoints
 
-`POST /api/inbox-sync`, `POST /api/review-queue/:id/{approve,reject}`,
-`GET /api/weekly-stats`, etc. are documented in the Phase 2 / Phase 3
-build-plan appendices and will land in this doc as those phases ship.
+`GET /api/weekly-stats`, etc. are documented in the Phase 3
+build-plan appendix and will land in this doc as that phase ships.

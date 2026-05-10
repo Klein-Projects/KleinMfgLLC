@@ -11,6 +11,7 @@ import {
   BookOpen,
   Truck,
   Inbox,
+  ListChecks,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -19,21 +20,24 @@ const navItems = [
   { href: "/portal", label: "Dashboard", icon: LayoutDashboard, key: "dashboard" },
   { href: "/portal/today", label: "Today", icon: ClipboardCheck, key: "today" },
   { href: "/portal/outreach", label: "Outreach", icon: Send, key: "outreach" },
+  { href: "/portal/review-queue", label: "Pending changes", icon: ListChecks, key: "review-queue" },
   { href: "/portal/leads", label: "Leads", icon: Users, key: "leads" },
   { href: "/portal/prompts", label: "Prompt Library", icon: BookOpen, key: "prompts" },
   { href: "/portal/shipments", label: "Shipments", icon: Truck, key: "shipments" },
-  { href: "/portal/review", label: "Review Queue", icon: Inbox, key: "review" },
+  { href: "/portal/review", label: "Web orders", icon: Inbox, key: "review" },
   { href: "/portal/settings", label: "Settings", icon: Settings, key: "settings" },
 ];
 
 export default function PortalShell({
   userEmail,
   reviewCount = 0,
+  reviewQueueCount = 0,
   todayCount = 0,
   children,
 }: {
   userEmail: string;
   reviewCount?: number;
+  reviewQueueCount?: number;
   todayCount?: number;
   children: React.ReactNode;
 }) {
@@ -46,10 +50,11 @@ export default function PortalShell({
     router.refresh();
   }
 
-  // Determine active nav item
+  // Determine active nav item. Match on segment boundaries so
+  // /portal/review-queue doesn't also light up the /portal/review tab.
   function isActive(href: string) {
     if (href === "/portal") return pathname === "/portal";
-    return pathname.startsWith(href);
+    return pathname === href || pathname.startsWith(href + "/");
   }
 
   return (
@@ -78,9 +83,11 @@ export default function PortalShell({
               const badgeCount =
                 item.key === "review"
                   ? reviewCount
-                  : item.key === "today"
-                    ? todayCount
-                    : 0;
+                  : item.key === "review-queue"
+                    ? reviewQueueCount
+                    : item.key === "today"
+                      ? todayCount
+                      : 0;
               const showBadge = badgeCount > 0;
               return (
                 <li key={item.href}>
