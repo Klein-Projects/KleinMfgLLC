@@ -10,7 +10,14 @@ import { X, Calendar } from "lucide-react";
 // On submit, POSTs to /api/leads/:id/wake-up with { wake_up_at, wake_up_reason }
 // then calls onSaved(). The caller is responsible for refreshing the page.
 
-type Preset = "30" | "60" | "90" | "custom";
+type Preset = "30" | "60" | "90" | "custom" | "indefinite";
+
+// Indefinite parks land on this sentinel date. The Today queue's
+// "wake_up_at > now()" filter still hides them; the lead detail
+// banner and the Leads list use the year (>= 2999) to render
+// "Parked indefinitely" instead of a real date. Picked far enough
+// out that no real Sean-driven follow-up date will ever collide.
+const INDEFINITE_WAKE_UP_AT = "2999-12-31";
 
 function addDaysISO(days: number): string {
   const d = new Date();
@@ -45,6 +52,7 @@ export default function ParkLeadModal({
   }, [onClose]);
 
   function resolvedDate(): string {
+    if (preset === "indefinite") return INDEFINITE_WAKE_UP_AT;
     if (preset === "custom") return customDate;
     return addDaysISO(Number(preset));
   }
@@ -99,8 +107,8 @@ export default function ParkLeadModal({
               </h2>
               <p className="mt-0.5 text-xs text-steel">
                 Hide <span className="font-semibold text-charcoal">{leadName}</span>{" "}
-                from the Today queue until the date below. Lead reappears
-                automatically on that day.
+                from the Today queue. Pick a date to auto-resurface, or park
+                indefinitely to set them aside without losing the record.
               </p>
             </div>
             <button
@@ -114,9 +122,18 @@ export default function ParkLeadModal({
           </div>
 
           <div className="px-5 py-4">
-            <fieldset className="grid grid-cols-4 gap-2" aria-label="Wake up after">
-              {(["30", "60", "90", "custom"] as const).map((p) => {
+            <fieldset
+              className="grid grid-cols-2 gap-2 sm:grid-cols-5"
+              aria-label="Wake up after"
+            >
+              {(["30", "60", "90", "custom", "indefinite"] as const).map((p) => {
                 const selected = preset === p;
+                const label =
+                  p === "custom"
+                    ? "Custom"
+                    : p === "indefinite"
+                      ? "Indefinite"
+                      : `${p} days`;
                 return (
                   <label
                     key={p}
@@ -134,7 +151,7 @@ export default function ParkLeadModal({
                       onChange={() => setPreset(p)}
                       className="sr-only"
                     />
-                    {p === "custom" ? "Custom" : `${p} days`}
+                    {label}
                   </label>
                 );
               })}
@@ -154,16 +171,28 @@ export default function ParkLeadModal({
             )}
 
             <div className="mt-2 text-xs text-steel">
-              Resurface on{" "}
-              <span className="font-semibold text-charcoal">
-                {new Date(resolvedDate() + "T00:00:00").toLocaleDateString([], {
-                  weekday: "short",
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                })}
-              </span>
-              .
+              {preset === "indefinite" ? (
+                <>
+                  Lead drops off the Today queue and lands in the{" "}
+                  <span className="font-semibold text-charcoal">
+                    Parked (indefinite)
+                  </span>{" "}
+                  pile on the Leads page until you unpark it manually.
+                </>
+              ) : (
+                <>
+                  Resurface on{" "}
+                  <span className="font-semibold text-charcoal">
+                    {new Date(resolvedDate() + "T00:00:00").toLocaleDateString([], {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </span>
+                  .
+                </>
+              )}
             </div>
 
             <label className="mt-4 block text-xs font-semibold uppercase tracking-wide text-steel">

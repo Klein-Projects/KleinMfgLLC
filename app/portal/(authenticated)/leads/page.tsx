@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, Moon, Infinity as InfinityIcon } from "lucide-react";
 
 const STATUS_OPTIONS = [
   "all",
@@ -48,8 +48,29 @@ interface LeadRow {
   source: string;
   follow_up_date: string | null;
   last_activity_at: string;
+  wake_up_at: string | null;
+  wake_up_reason: string | null;
   contact: { first_name: string; last_name: string } | null;
   company: { name: string } | null;
+}
+
+type ParkFilter = "all" | "active_only" | "parked" | "parked_indefinite";
+
+const PARK_FILTER_LABELS: Record<ParkFilter, string> = {
+  all: "All leads",
+  active_only: "Active (hide parked)",
+  parked: "Parked only",
+  parked_indefinite: "Parked indefinitely",
+};
+
+function isLeadParkedNow(lead: LeadRow): boolean {
+  if (!lead.wake_up_at) return false;
+  return new Date(lead.wake_up_at).getTime() > Date.now();
+}
+
+function isLeadParkedIndefinitely(lead: LeadRow): boolean {
+  if (!lead.wake_up_at) return false;
+  return new Date(lead.wake_up_at).getUTCFullYear() >= 2999;
 }
 
 export default function LeadsListPage() {
@@ -57,10 +78,13 @@ export default function LeadsListPage() {
   const searchParams = useSearchParams();
   const initialStatus = searchParams.get("status") ?? "all";
 
+  const initialParkFilter = (searchParams.get("park") ?? "active_only") as ParkFilter;
+
   const [leads, setLeads] = useState<LeadRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState(initialStatus);
   const [sourceFilter, setSourceFilter] = useState("all");
+  const [parkFilter, setParkFilter] = useState<ParkFilter>(initialParkFilter);
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -70,7 +94,7 @@ export default function LeadsListPage() {
       const { data } = await supabase
         .from("leads")
         .select(
-          "id, status, source, follow_up_date, last_activity_at, contact:contacts(first_name, last_name), company:companies(name)"
+          "id, status, source, follow_up_date, last_activity_at, wake_up_at, wake_up_reason, contact:contacts(first_name, last_name), company:companies(name)"
         )
         .order("last_activity_at", { ascending: false });
       setLeads((data as any[]) ?? []);
@@ -85,6 +109,13 @@ export default function LeadsListPage() {
     return leads.filter((lead) => {
       if (statusFilter !== "all" && lead.status !== statusFilter) return false;
       if (sourceFilter !== "all" && lead.source !== sourceFilter) return false;
+
+      const parkedNow = isLeadParkedNow(lead);
+      const parkedIndef = isLeadParkedIndefinitely(lead);
+      if (parkFilter === "active_only" && parkedNow) return false;
+      if (parkFilter === "parked" && !parkedNow) return false;
+      if (parkFilter === "parked_indefinite" && !parkedIndef) return false;
+
       if (overdueOnly) {
         if (!lead.follow_up_date || lead.follow_up_date > todayISO) return false;
       }
@@ -98,7 +129,7 @@ export default function LeadsListPage() {
       }
       return true;
     });
-  }, [leads, statusFilter, sourceFilter, overdueOnly, search, todayISO]);
+  }, [leads, statusFilter, sourceFilter, parkFilter, overdueOnly, search, todayISO]);
 
   function formatDate(dateStr: string | null): string {
     if (!dateStr) return "—";
@@ -177,6 +208,22 @@ export default function LeadsListPage() {
           ))}
         </select>
 
+        {/* Park status */}
+        <select
+          value={parkFilter}
+          onChange={(e) => setParkFilter(e.target.value as ParkFilter)}
+          className="rounded-md border border-navy/20 bg-white px-3 py-2 text-sm text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+          aria-label="Park status"
+        >
+          {(["active_only", "all", "parked", "parked_indefinite"] as const).map(
+            (k) => (
+              <option key={k} value={k}>
+                {PARK_FILTER_LABELS[k]}
+              </option>
+            ),
+          )}
+        </select>
+
         {/* Overdue toggle */}
         <label className="flex items-center gap-2 text-sm text-charcoal">
           <input
@@ -239,13 +286,34 @@ export default function LeadsListPage() {
                       {companyName}
                     </td>
                     <td className="px-4 py-3">
-                      <span
-                        className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                          statusColors[lead.status] ?? "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {statusLabels[lead.status] ?? lead.status}
-                      </span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span
+                          className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                            statusColors[lead.status] ?? "bg-gray-100 text-gray-800"
+                          }`}
+                        >
+                          {statusLabels[lead.status] ?? lead.status}
+                        </span>
+                        {isLeadParkedNow(lead) && (
+                          <span
+                            className="inline-flex items-center gap-1 rounded-full bg-navy/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-navy"
+                            title={
+                              isLeadParkedIndefinitely(lead)
+                                ? "Parked indefinitely"
+                                : `Parked until ${formatDate(lead.wake_up_at)}`
+                            }
+                          >
+                            {isLeadParkedIndefinitely(lead) ? (
+                              <InfinityIcon className="h-3 w-3" />
+                            ) : (
+                              <Moon className="h-3 w-3" />
+                            )}
+                            {isLeadParkedIndefinitely(lead)
+                              ? "Parked"
+                              : `Parked · ${formatDate(lead.wake_up_at)}`}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 capitalize text-charcoal/70">
                       {lead.source}

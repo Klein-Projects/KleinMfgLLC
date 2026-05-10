@@ -199,9 +199,12 @@ export default function LeadDetailClient({
 
   // Lead is "parked" while wake_up_at is in the future. The Today queue
   // skips it; we surface the parked state up top so Sean can read or undo.
+  // Indefinite parks land on a year-2999 sentinel — render distinctly.
   const wakeUpAt: string | null = lead.wake_up_at ?? null;
   const isParked =
     !!wakeUpAt && new Date(wakeUpAt).getTime() > Date.now();
+  const isIndefinitePark =
+    !!wakeUpAt && new Date(wakeUpAt).getUTCFullYear() >= 2999;
   const wakeUpReason: string | null = lead.wake_up_reason ?? null;
 
   function handleFollowUpChange(date: string) {
@@ -355,13 +358,19 @@ export default function LeadDetailClient({
             <Moon className="h-4 w-4 shrink-0 text-navy" />
             <div className="flex-1">
               <p className="text-sm font-semibold text-navy">
-                Parked until{" "}
-                {new Date(wakeUpAt as string).toLocaleDateString([], {
-                  weekday: "short",
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                })}
+                {isIndefinitePark ? (
+                  "Parked indefinitely"
+                ) : (
+                  <>
+                    Parked until{" "}
+                    {new Date(wakeUpAt as string).toLocaleDateString([], {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </>
+                )}
               </p>
               {wakeUpReason && (
                 <p className="mt-0.5 text-xs text-charcoal">
@@ -370,7 +379,9 @@ export default function LeadDetailClient({
                 </p>
               )}
               <p className="mt-0.5 text-[11px] text-steel">
-                Hidden from the Today queue until then.
+                {isIndefinitePark
+                  ? "Hidden from the Today queue. Unpark when you want to revisit."
+                  : "Hidden from the Today queue until then."}
               </p>
             </div>
             <button
