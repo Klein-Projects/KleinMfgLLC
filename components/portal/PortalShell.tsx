@@ -12,6 +12,7 @@ import {
   Truck,
   Inbox,
   ListChecks,
+  BarChart3,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -23,6 +24,7 @@ const navItems = [
   { href: "/portal/review-queue", label: "Pending changes", icon: ListChecks, key: "review-queue" },
   { href: "/portal/leads", label: "Leads", icon: Users, key: "leads" },
   { href: "/portal/prompts", label: "Prompt Library", icon: BookOpen, key: "prompts" },
+  { href: "/portal/prompts/analytics", label: "Analytics", icon: BarChart3, key: "analytics" },
   { href: "/portal/shipments", label: "Shipments", icon: Truck, key: "shipments" },
   { href: "/portal/review", label: "Web orders", icon: Inbox, key: "review" },
   { href: "/portal/settings", label: "Settings", icon: Settings, key: "settings" },
@@ -51,9 +53,15 @@ export default function PortalShell({
   }
 
   // Determine active nav item. Match on segment boundaries so
-  // /portal/review-queue doesn't also light up the /portal/review tab.
+  // /portal/review-queue does not also light up the /portal/review tab.
+  // /portal/prompts/analytics is its own top-level entry, so when the
+  // user is on it Prompt Library should NOT also highlight.
   function isActive(href: string) {
     if (href === "/portal") return pathname === "/portal";
+    if (href === "/portal/prompts") {
+      if (pathname.startsWith("/portal/prompts/analytics")) return false;
+      return pathname === href || pathname.startsWith(href + "/");
+    }
     return pathname === href || pathname.startsWith(href + "/");
   }
 

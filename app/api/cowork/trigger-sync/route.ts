@@ -1,29 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-// POST /api/cowork/trigger-sync?task=sent-invitations  — Phase 1.5
-// POST /api/cowork/trigger-sync?task=dm-inbox          — Phase 2 (placeholder)
+// POST /api/cowork/trigger-sync?task=sent-invitations  (Phase 1.5)
+// POST /api/cowork/trigger-sync?task=dm-inbox          (Phase 2)
 //
-// Fires a Cowork scraper task on demand. Backed by a per-task webhook URL
-// stored in Vercel env vars; Cowork shares this URL when it builds each
-// task. The portal is the only authorized caller.
+// Fires a Cowork scraper on demand. Implementation: writes a row to
+// the sync_triggers table with fire_status='queued'. The
+// klein-sync-poller scheduled task on Cowork polls the table every
+// ~5 minutes, claims queued rows, runs the matching scrape inline,
+// and writes back fire_status. Latency between click and scrape
+// start is up to ~5 minutes, which is fine for an on-demand button.
+//
+// Replaces the original webhook-URL design (COWORK_TRIGGER_*_URL)
+// which was never wired up because Cowork does not expose public
+// webhook endpoints.
 //
 // Auth: cookie session (Sean from /portal/settings/sync, etc.).
-//
-// Returns 202 with { run_id, task, fired_at } on success. The run_id is
-// whatever Cowork returns in its webhook response body; the portal does
-// not generate one. If the env var for the requested task is unset, the
-// route returns 503 with a "not configured" payload so the UI can render
-// a "task not yet wired up by Cowork" disabled state without a 500.
+// Returns 202 with { trigger_id, task, queued_at, message }.
 
-const TASK_ENV_MAP: Record<string, string> = {
-  "sent-invitations": "COWORK_TRIGGER_SENT_INVITATIONS_URL",
-  "dm-inbox": "COWORK_TRIGGER_DM_INBOX_URL",
-};
+const VALID_TASKS = new Set(["sent-invitations", "dm-inbox"]);
+
+// Cooldown: refuse to queue more than one trigger for the same task
+// within this window. Stops accidental double-clicks from spamming
+// the poller.
+const COOLDOWN_SECONDS = 60;
 
 export async function POST(req: NextRequest) {
   const supabase = createClient();
-
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -32,93 +35,121 @@ export async function POST(req: NextRequest) {
   }
 
   const task = new URL(req.url).searchParams.get("task");
-  if (!task || !TASK_ENV_MAP[task]) {
+  if (!task || !VALID_TASKS.has(task)) {
     return NextResponse.json(
       {
         error:
           "task is required (one of: " +
-          Object.keys(TASK_ENV_MAP).join(", ") +
+          Array.from(VALID_TASKS).join(", ") +
           ")",
       },
       { status: 400 },
     );
   }
 
-  const envName = TASK_ENV_MAP[task];
-  const webhookUrl = process.env[envName];
-  if (!webhookUrl) {
+  // Cooldown: any recent queued or firing trigger for this task?
+  const cutoff = new Date(Date.now() - COOLDOWN_SECONDS * 1000).toISOString();
+  const { data: recent } = await supabase
+    .from("sync_triggers")
+    .select("id, fire_status, requested_at")
+    .eq("task_id", task)
+    .in("fire_status", ["queued", "firing"])
+    .gte("requested_at", cutoff)
+    .order("requested_at", { ascending: false })
+    .limit(1);
+
+  if (recent && recent.length > 0) {
     return NextResponse.json(
       {
-        error: "task_not_configured",
-        message: `Cowork has not provided a webhook URL for this task yet (expected env var ${envName}).`,
+        ok: true,
+        already_queued: true,
+        trigger_id: recent[0].id,
         task,
-      },
-      { status: 503 },
-    );
-  }
-
-  // Optional: forward a small auth header so Cowork can prove the trigger
-  // came from the portal. Reuses COWORK_API_TOKEN — Cowork's task is the
-  // intended audience for both directions.
-  const sharedToken = process.env.COWORK_API_TOKEN;
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (sharedToken) headers["Authorization"] = `Bearer ${sharedToken}`;
-
-  const firedAt = new Date().toISOString();
-
-  let resp: Response;
-  try {
-    resp = await fetch(webhookUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ source: "portal_sync_button", fired_at: firedAt, task }),
-      // Cowork tasks may take a moment to ack — give them up to 15s.
-      signal: AbortSignal.timeout(15_000),
-    });
-  } catch (err) {
-    return NextResponse.json(
-      {
-        error: "trigger_failed",
+        queued_at: recent[0].requested_at,
         message:
-          err instanceof Error ? err.message : "Failed to reach Cowork webhook",
-        task,
+          "A sync for this task is already queued. The poller will pick it up within ~5 minutes.",
       },
-      { status: 502 },
+      { status: 202 },
     );
   }
 
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
+  const { data: inserted, error } = await supabase
+    .from("sync_triggers")
+    .insert({
+      task_id: task,
+      requested_by: user.id,
+      fire_status: "queued",
+    })
+    .select("id, requested_at")
+    .single();
+
+  if (error || !inserted) {
     return NextResponse.json(
       {
-        error: "trigger_failed",
-        message: `Cowork webhook returned ${resp.status}`,
-        body: text.slice(0, 500),
+        error: "queue_failed",
+        message: error?.message ?? "Failed to insert sync_triggers row",
         task,
       },
-      { status: 502 },
+      { status: 500 },
     );
-  }
-
-  // Try to read a JSON ack with run_id, but don't fail the trigger if Cowork
-  // returns plain text or an empty 200.
-  let runId: string | null = null;
-  try {
-    const ackText = await resp.text();
-    if (ackText) {
-      try {
-        const ack = JSON.parse(ackText) as Record<string, unknown>;
-        if (typeof ack?.run_id === "string") runId = ack.run_id;
-      } catch {
-        /* ignore non-JSON */
-      }
-    }
-  } catch {
-    /* ignore */
   }
 
   return NextResponse.json(
-    { ok: true, task, run_id: runId, fired_at: firedAt },
+    {
+      ok: true,
+      trigger_id: inserted.id,
+      task,
+      queued_at: inserted.requested_at,
+      message:
+        "Queued. The Cowork poller checks every ~5 minutes and will run this scrape on its next tick.",
+    },
     { status: 202 },
   );
+}
+
+// GET /api/cowork/trigger-sync (cookie auth) — read-only status for
+// the Sync page UI. Returns the latest row per task plus queued and
+// firing counts so the UI can render "Queued / running soon" or
+// "Last run finished N min ago".
+export async function GET() {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { data, error } = await supabase
+    .from("sync_triggers")
+    .select(
+      "id, task_id, fire_status, requested_at, fired_at, finished_at, fire_error",
+    )
+    .order("requested_at", { ascending: false })
+    .limit(50);
+
+  if (error) {
+    return NextResponse.json(
+      { error: "read_failed", message: error.message },
+      { status: 500 },
+    );
+  }
+
+  type Row = NonNullable<typeof data>[number];
+  const byTask: Record<
+    string,
+    { latest: Row | null; queuedCount: number; firingCount: number }
+  > = {};
+  VALID_TASKS.forEach((t) => {
+    byTask[t] = { latest: null, queuedCount: 0, firingCount: 0 };
+  });
+  for (const row of data ?? []) {
+    const bucket = byTask[row.task_id];
+    if (!bucket) continue;
+    if (!bucket.latest) bucket.latest = row;
+    if (row.fire_status === "queued") bucket.queuedCount += 1;
+    if (row.fire_status === "firing") bucket.firingCount += 1;
+  }
+
+  return NextResponse.json({ ok: true, byTask }, { status: 200 });
 }

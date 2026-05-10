@@ -17,9 +17,11 @@ import { createClient as createCookieClient } from "@/lib/supabase/server";
 // up garbage in the dashboard.
 
 const ALLOWED_TASK_IDS = new Set<string>([
-  "klein-sent-invitations-scraper",
-  // Phase 2 will add: "klein-dm-inbox-scraper"
-  // Phase 3 will add: "klein-deep-historical-sweep", "klein-weekly-digest"
+  "klein-sent-invitations-scraper", // Phase 1.5
+  "klein-dm-scraper",               // Phase 2 (SKILL named klein-dm-scraper)
+  "klein-deep-historical-sweep",    // Phase 3 one-time bootstrap
+  "klein-weekly-digest",            // Phase 3 (Cowork-side)
+  "klein-sync-poller",              // On-demand Sync polling task (Option 3)
 ]);
 
 const VALID_RUN_MODES = new Set(["dry_run", "live"]);
