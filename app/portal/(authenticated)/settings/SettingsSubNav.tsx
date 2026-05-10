@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { href: "/portal/settings",          label: "Sales Settings" },
   { href: "/portal/settings/cadence",  label: "Cadence Rules"  },
+  { href: "/portal/settings/sync",     label: "Sync"           },
 ];
 
 export default function SettingsSubNav() {

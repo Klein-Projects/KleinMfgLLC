@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Klein Portal — Outreach (Phase 1.5 mockup)</title>
+<style>
+  :root {
+    --navy:     #1C2E4A;
+    --red:      #A52A2A;
+    --charcoal: #2E2E2E;
+    --steel:    #7A7A7A;
+    --offwhite: #F4F4F2;
+    --border:   rgba(28, 46, 74, 0.10);
+    --border-strong: rgba(28, 46, 74, 0.20);
+    --shadow-sm: 0 1px 2px rgba(28, 46, 74, 0.06);
+    --green:    #16A34A;
+    --amber:    #B45309;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--charcoal);
+    background: var(--offwhite);
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; text-decoration: none; }
+
+  /* ── Layout ── */
+  .layout { display: flex; min-height: 100vh; }
+  .sidebar {
+    position: fixed; top: 0; left: 0;
+    width: 240px; height: 100vh;
+    background: var(--navy); color: #fff;
+    display: flex; flex-direction: column;
+    z-index: 40;
+  }
+  .main { margin-left: 240px; flex: 1; min-height: 100vh; }
+  @media (max-width: 768px) {
+    .sidebar { display: none; }
+    .main { margin-left: 0; }
+  }
+
+  /* ── Sidebar ── */
+  .brand {
+    display: flex; align-items: center; gap: 12px;
+    padding: 18px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+  }
+  .brand-mark {
+    width: 56px; height: 56px;
+    border-radius: 6px;
+    background: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; color: var(--navy); letter-spacing: -0.02em;
+    font-size: 20px;
+  }
+  .brand-name { font-weight: 700; font-size: 18px; }
+
+  .nav { flex: 1; padding: 16px 12px; }
+  .nav ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+  .nav a {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 12px; border-radius: 6px;
+    color: rgba(255, 255, 255, 0.70);
+    font-size: 14px; font-weight: 500;
+    transition: background 120ms, color 120ms;
+  }
+  .nav a:hover { background: rgba(255, 255, 255, 0.05); color: #fff; }
+  .nav a.active {
+    background: rgba(255, 255, 255, 0.10);
+    color: #fff;
+    border-left: 2px solid var(--red);
+    padding-left: 10px;
+  }
+  .nav-icon {
+    width: 16px; height: 16px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+  .nav-badge {
+    margin-left: auto;
+    min-width: 20px; height: 20px; padding: 0 6px;
+    background: var(--red); color: #fff;
+    border-radius: 999px;
+    font-size: 11px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .sidebar-foot {
+    padding: 16px 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.10);
+    font-size: 11px; color: rgba(255, 255, 255, 0.55);
+  }
+
+  /* ── Main ── */
+  .topbar {
+    background: #fff; border-bottom: 1px solid var(--border);
+    padding: 18px 32px;
+  }
+  .topbar h1 { margin: 0; font-size: 22px; color: var(--navy); }
+  .topbar-sub { margin-top: 4px; font-size: 13px; color: var(--steel); }
+
+  .content { padding: 24px 32px 64px; max-width: 1200px; }
+
+  /* ── Paste panel ── */
+  .paste-panel {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow-sm);
+  }
+  .paste-panel h2 {
+    margin: 0 0 4px;
+    font-size: 15px; color: var(--navy);
+  }
+  .paste-panel p {
+    margin: 0 0 14px;
+    font-size: 13px; color: var(--steel);
+  }
+  textarea.urls {
+    width: 100%; min-height: 110px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font: 13px/1.55 ui-monospace, Menlo, Consolas, monospace;
+    color: var(--charcoal);
+    resize: vertical;
+    outline: none;
+  }
+  textarea.urls:focus {
+    border-color: var(--navy);
+    box-shadow: 0 0 0 3px rgba(28, 46, 74, 0.12);
+  }
+  .paste-actions {
+    margin-top: 12px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  }
+  .label {
+    font-size: 12px; font-weight: 600; color: var(--steel);
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+
+  select, button { font: inherit; }
+  select.prompt-select {
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    padding: 7px 10px;
+    background: #fff;
+    color: var(--charcoal);
+    font-size: 13px;
+    min-width: 280px;
+  }
+  select.prompt-select:focus {
+    outline: none;
+    border-color: var(--navy);
+    box-shadow: 0 0 0 3px rgba(28, 46, 74, 0.12);
+  }
+  .btn {
+    border: 1px solid var(--border-strong);
+    background: #fff;
+    color: var(--navy);
+    border-radius: 6px;
+    padding: 7px 12px;
+    font-size: 13px; font-weight: 600;
+    cursor: pointer;
+    transition: border-color 120ms, background 120ms, color 120ms;
+  }
+  .btn:hover { border-color: var(--navy); }
+  .btn-primary {
+    background: var(--navy); color: #fff; border-color: var(--navy);
+  }
+  .btn-primary:hover {
+    background: #15263d; border-color: #15263d;
+  }
+  .btn-primary:disabled,
+  .btn:disabled {
+    opacity: 0.55; cursor: not-allowed;
+  }
+
+  .meta-row {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 16px;
+    margin-top: 10px;
+    font-size: 12px; color: var(--steel);
+  }
+  .meta-row strong { color: var(--charcoal); font-weight: 700; }
+
+  /* ── Card grid ── */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: var(--shadow-sm);
+    display: flex; flex-direction: column;
+    gap: 12px;
+    position: relative;
+    transition: opacity 120ms, background 120ms;
+  }
+  .card.sent {
+    background: #F7F8F9;
+    opacity: 0.85;
+  }
+  .card.error {
+    border-color: rgba(165, 42, 42, 0.45);
+  }
+
+  .card-header {
+    display: flex; align-items: flex-start; gap: 12px;
+  }
+  .avatar {
+    width: 40px; height: 40px;
+    border-radius: 999px;
+    background: var(--offwhite);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--navy);
+    font-weight: 700; font-size: 14px;
+    flex-shrink: 0;
+  }
+  .card-header-text { flex: 1; min-width: 0; }
+  .card-name {
+    font-size: 15px; font-weight: 700; color: var(--navy);
+    margin: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .card-headline {
+    margin: 2px 0 0;
+    font-size: 12px; color: var(--steel); line-height: 1.4;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .card-url {
+    font: 11px/1.4 ui-monospace, Menlo, Consolas, monospace;
+    color: var(--steel);
+    word-break: break-all;
+  }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    line-height: 1.4;
+  }
+  .badge-warn {
+    background: rgba(180, 83, 9, 0.10);
+    color: var(--amber);
+  }
+  .badge-ok {
+    background: rgba(22, 163, 74, 0.10);
+    color: var(--green);
+  }
+
+  .card-controls {
+    display: flex; flex-direction: column; gap: 8px;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+  .card-controls select {
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    padding: 7px 10px;
+    background: #fff;
+    color: var(--charcoal);
+    font-size: 13px;
+    width: 100%;
+  }
+  .card-controls select:focus {
+    outline: none;
+    border-color: var(--navy);
+    box-shadow: 0 0 0 3px rgba(28, 46, 74, 0.12);
+  }
+
+  .send-btn {
+    width: 100%;
+    background: var(--red);
+    color: #fff;
+    border: 1px solid var(--red);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 14px; font-weight: 700;
+    cursor: pointer;
+    transition: background 120ms, border-color 120ms;
+  }
+  .send-btn:hover { background: #8c2424; border-color: #8c2424; }
+  .send-btn:disabled {
+    background: #ddd; border-color: #ddd; color: #888;
+    cursor: not-allowed;
+  }
+
+  .sent-stamp {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600; color: var(--green);
+    background: rgba(22, 163, 74, 0.08);
+    padding: 8px 10px; border-radius: 6px;
+  }
+  .check {
+    width: 16px; height: 16px; border-radius: 999px;
+    background: var(--green); color: #fff;
+    font-size: 11px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+
+  .error-msg {
+    font-size: 12px;
+    color: var(--red);
+    background: rgba(165, 42, 42, 0.06);
+    border: 1px solid rgba(165, 42, 42, 0.20);
+    padding: 8px 10px;
+    border-radius: 6px;
+    line-height: 1.45;
+  }
+  .error-actions {
+    margin-top: 6px;
+    display: flex; gap: 8px;
+  }
+
+  .empty {
+    background: #fff;
+    border: 1px dashed var(--border-strong);
+    border-radius: 8px;
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--steel);
+    font-size: 14px;
+  }
+
+  /* ── Footer note ── */
+  .footnote {
+    margin-top: 32px;
+    padding: 16px 20px;
+    background: #fff;
+    border-left: 3px solid var(--red);
+    border-radius: 4px;
+    font-size: 13px; color: var(--charcoal); line-height: 1.55;
+  }
+  .footnote strong { color: var(--navy); }
+  code { font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; color: var(--navy); }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- ── Sidebar (mockup; matches PortalShell) ── -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">K</div>
+      <div class="brand-name">Klein Portal</div>
+    </div>
+    <nav class="nav">
+      <ul>
+        <li><a href="#"><span class="nav-icon">▦</span> Dashboard</a></li>
+        <li><a href="#"><span class="nav-icon">✓</span> Today <span class="nav-badge">5</span></a></li>
+        <li><a href="#" class="active"><span class="nav-icon">↗</span> Outreach</a></li>
+        <li><a href="#"><span class="nav-icon">◍</span> Leads</a></li>
+        <li><a href="#"><span class="nav-icon">📚</span> Prompt Library</a></li>
+        <li><a href="#"><span class="nav-icon">🚚</span> Shipments</a></li>
+        <li><a href="#"><span class="nav-icon">📥</span> Review Queue</a></li>
+        <li><a href="#"><span class="nav-icon">⚙</span> Settings</a></li>
+      </ul>
+    </nav>
+    <div class="sidebar-foot">
+      sean@kleinmfgllc.com<br/>
+      <a href="#" style="color: rgba(255,255,255,0.55);">Logout</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <h1>Outreach</h1>
+      <div class="topbar-sub">
+        Paste LinkedIn URLs, pick the prompt you're using, send connection
+        requests. Every send logs a <code>connection_request</code> activity
+        and creates the lead with status <strong>invited</strong> in real time.
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- ── Paste panel ── -->
+      <section class="paste-panel">
+        <h2>Paste LinkedIn profile URLs</h2>
+        <p>One URL per line, or paste a comma-separated list. Duplicates are
+        collapsed automatically. Parsed names will fill in below — typos in
+        the URL are caught when the card opens LinkedIn.</p>
+
+        <textarea class="urls" placeholder="https://www.linkedin.com/in/joseph-pisciotta/
+https://www.linkedin.com/in/cody-morris-aviation/
+https://www.linkedin.com/in/maria-rodriguez-mro/
+https://www.linkedin.com/in/david-chen-jetops/">https://www.linkedin.com/in/joseph-pisciotta/
+https://www.linkedin.com/in/cody-morris-aviation/
+https://www.linkedin.com/in/maria-rodriguez-mro/
+https://www.linkedin.com/in/david-chen-jetops/</textarea>
+
+        <div class="paste-actions">
+          <span class="label">Default prompt</span>
+          <select class="prompt-select" id="default-prompt">
+            <optgroup label="First Contact">
+              <option>First Contact — Aviation MRO Cold Note</option>
+              <option>First Contact — Airline Maintenance Director</option>
+              <option>First Contact — Defense / Cargo</option>
+              <option>First Contact — Generic</option>
+            </optgroup>
+            <optgroup label="Follow-Up">
+              <option>Follow-Up — 3 Days After Connect (General)</option>
+            </optgroup>
+          </select>
+          <button class="btn">Assign to all</button>
+          <button class="btn">Parse URLs</button>
+          <span style="margin-left: auto; font-size: 12px; color: var(--steel);">
+            <strong style="color: var(--charcoal);">4 URLs</strong> parsed ·
+            <strong style="color: var(--amber);">1 already invited</strong>
+          </span>
+        </div>
+      </section>
+
+      <!-- ── Cards ── -->
+      <div class="grid">
+
+        <!-- 1. Idle — ready to send -->
+        <article class="card">
+          <div class="card-header">
+            <div class="avatar">JP</div>
+            <div class="card-header-text">
+              <h3 class="card-name">Joseph Pisciotta</h3>
+              <p class="card-headline">Aircraft Maintenance Manager · PSA Airlines, Inc.</p>
+            </div>
+          </div>
+          <div class="card-url">/in/joseph-pisciotta</div>
+          <div class="card-controls">
+            <select>
+              <optgroup label="First Contact">
+                <option selected>First Contact — Aviation MRO Cold Note</option>
+                <option>First Contact — Airline Maintenance Director</option>
+                <option>First Contact — Defense / Cargo</option>
+                <option>First Contact — Generic</option>
+              </optgroup>
+            </select>
+            <button class="send-btn">Send connection request →</button>
+          </div>
+        </article>
+
+        <!-- 2. Already invited — warning chip -->
+        <article class="card">
+          <div class="card-header">
+            <div class="avatar">CM</div>
+            <div class="card-header-text">
+              <h3 class="card-name">Cody Morris</h3>
+              <p class="card-headline">Director of Maintenance · Jet Aviation</p>
+              <span class="badge badge-warn" style="margin-top: 6px;">⚠ Already invited 4 days ago</span>
+            </div>
+          </div>
+          <div class="card-url">/in/cody-morris-aviation</div>
+          <div class="card-controls">
+            <select>
+              <optgroup label="First Contact">
+                <option selected>First Contact — Aviation MRO Cold Note</option>
+                <option>First Contact — Airline Maintenance Director</option>
+              </optgroup>
+            </select>
+            <button class="send-btn">Send anyway →</button>
+          </div>
+        </article>
+
+        <!-- 3. Sending state -->
+        <article class="card">
+          <div class="card-header">
+            <div class="avatar">MR</div>
+            <div class="card-header-text">
+              <h3 class="card-name">Maria Rodriguez</h3>
+              <p class="card-headline">Senior MRO Engineer · AAR Corp</p>
+            </div>
+          </div>
+          <div class="card-url">/in/maria-rodriguez-mro</div>
+          <div class="card-controls">
+            <select disabled>
+              <option>First Contact — Aviation MRO Cold Note</option>
+            </select>
+            <button class="send-btn" disabled>Sending…</button>
+          </div>
+        </article>
+
+        <!-- 4. Sent (success) state -->
+        <article class="card sent">
+          <div class="card-header">
+            <div class="avatar">DC</div>
+            <div class="card-header-text">
+              <h3 class="card-name">David Chen</h3>
+              <p class="card-headline">Director, Jet Operations · Air Lease</p>
+              <span class="badge badge-ok" style="margin-top: 6px;">✓ Invited</span>
+            </div>
+          </div>
+          <div class="card-url">/in/david-chen-jetops</div>
+          <div class="sent-stamp">
+            <span class="check">✓</span>
+            Connection request sent · 2:43 PM · prompt logged
+          </div>
+        </article>
+
+        <!-- 5. Error state -->
+        <article class="card error" style="grid-column: span 1;">
+          <div class="card-header">
+            <div class="avatar">RT</div>
+            <div class="card-header-text">
+              <h3 class="card-name">Robert Tan</h3>
+              <p class="card-headline">VP Maintenance · Cathay Cargo</p>
+            </div>
+          </div>
+          <div class="card-url">/in/robert-tan-mx</div>
+          <div class="card-controls">
+            <select>
+              <optgroup label="First Contact">
+                <option>First Contact — Aviation MRO Cold Note</option>
+                <option selected>First Contact — Airline Maintenance Director</option>
+              </optgroup>
+            </select>
+            <div class="error-msg">
+              <strong>Send failed.</strong> Could not log activity — server
+              returned 500. The LinkedIn tab still opened, but the lead was
+              <em>not</em> created. Click Retry to try again.
+            </div>
+            <div class="error-actions">
+              <button class="send-btn" style="max-width: 160px;">Retry</button>
+              <button class="btn">Skip</button>
+            </div>
+          </div>
+        </article>
+
+      </div>
+
+      <!-- ── Footnote (delete in real implementation) ── -->
+      <div class="footnote">
+        <strong>Mockup notes —</strong> states shown:
+        (1) idle/ready, (2) already-invited warning chip from
+        <code>GET /api/leads/by-linkedin-url</code>, (3) sending,
+        (4) success (gray + check + timestamp), (5) error.
+        Prompt picker per card defaults to the page-level default; "Assign to
+        all" syncs every idle card. Send button is disabled until a prompt is
+        selected for that card. Send copies the personalized note text to the
+        clipboard, opens <code>linkedin_url</code> in a new tab, and POSTs
+        <code>/api/leads/log-invitation</code>.
+      </div>
+
+    </div>
+  </main>
+</div>
+</body>
+</html>

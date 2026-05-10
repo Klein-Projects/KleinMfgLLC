@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   ClipboardCheck,
+  Send,
   Users,
   BookOpen,
   Truck,
@@ -17,6 +18,7 @@ import {
 const navItems = [
   { href: "/portal", label: "Dashboard", icon: LayoutDashboard, key: "dashboard" },
   { href: "/portal/today", label: "Today", icon: ClipboardCheck, key: "today" },
+  { href: "/portal/outreach", label: "Outreach", icon: Send, key: "outreach" },
   { href: "/portal/leads", label: "Leads", icon: Users, key: "leads" },
   { href: "/portal/prompts", label: "Prompt Library", icon: BookOpen, key: "prompts" },
   { href: "/portal/shipments", label: "Shipments", icon: Truck, key: "shipments" },

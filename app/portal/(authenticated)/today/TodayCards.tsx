@@ -9,19 +9,23 @@ import {
   AlertTriangle,
   Pencil,
   CheckCircle2,
+  Moon,
   X,
 } from "lucide-react";
 import type { TodayCard } from "@/lib/portal/today-queue";
 import { linkedinUrlFor } from "@/lib/portal/today-queue";
+import ParkLeadModal from "@/components/portal/ParkLeadModal";
 
 const STATUS_LABELS: Record<string, string> = {
   new: "New",
+  invited: "Invited",
   contacted: "Contacted",
   sample_sent: "Sample Sent",
 };
 
 const STATUS_BADGE_CLASS: Record<string, string> = {
   new: "bg-navy/10 text-navy",
+  invited: "bg-amber-100 text-amber-900",
   contacted: "bg-navy/10 text-navy",
   sample_sent: "bg-orange-100 text-orange-800",
 };
@@ -54,6 +58,7 @@ export default function TodayCards({ cards }: { cards: TodayCard[] }) {
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [editingLinkedInFor, setEditingLinkedInFor] =
     useState<TodayCard | null>(null);
+  const [parkingFor, setParkingFor] = useState<TodayCard | null>(null);
 
   const showUndo = useCallback((state: UndoState) => {
     if (undoTimer.current) clearTimeout(undoTimer.current);
@@ -236,6 +241,7 @@ export default function TodayCards({ cards }: { cards: TodayCard[] }) {
             onPrimary={() => onPrimaryClick(card)}
             onMarkNotInterested={() => onMarkNotInterested(card)}
             onAddLinkedIn={() => setEditingLinkedInFor(card)}
+            onPark={() => setParkingFor(card)}
           />
         ))}
       </div>
@@ -292,6 +298,18 @@ export default function TodayCards({ cards }: { cards: TodayCard[] }) {
           }}
         />
       )}
+
+      {parkingFor && (
+        <ParkLeadModal
+          leadId={parkingFor.lead_id}
+          leadName={parkingFor.contact.full_name}
+          onClose={() => setParkingFor(null)}
+          onSaved={() => {
+            setParkingFor(null);
+            router.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -302,12 +320,14 @@ function CardView({
   onPrimary,
   onMarkNotInterested,
   onAddLinkedIn,
+  onPark,
 }: {
   card: TodayCard;
   pending: boolean;
   onPrimary: () => void;
   onMarkNotInterested: () => void;
   onAddLinkedIn: () => void;
+  onPark: () => void;
 }) {
   const linkedinUrl = linkedinUrlFor(card);
   const overdueLabel = overdueText(card.trigger.days_overdue);
@@ -411,6 +431,15 @@ function CardView({
           </button>
         )}
         <span className="ml-auto" />
+        <button
+          onClick={onPark}
+          disabled={pending}
+          className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-2 text-sm font-semibold text-steel transition-colors hover:text-navy disabled:opacity-50"
+          title="Park this lead — hide from Today until a future date"
+        >
+          <Moon className="h-3.5 w-3.5" />
+          Park
+        </button>
         <button
           onClick={onMarkNotInterested}
           disabled={pending}

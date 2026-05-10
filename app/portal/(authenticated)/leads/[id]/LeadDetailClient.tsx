@@ -14,7 +14,10 @@ import {
   X,
   Check,
   Trash2,
+  Moon,
+  Sun,
 } from "lucide-react";
+import ParkLeadModal from "@/components/portal/ParkLeadModal";
 import {
   updateLeadField,
   logActivity,
@@ -26,6 +29,7 @@ import { updateShipment } from "../../shipments/actions";
 
 const STATUS_OPTIONS = [
   "new",
+  "invited",
   "contacted",
   "engaged",
   "sample_sent",
@@ -37,6 +41,7 @@ const STATUS_OPTIONS = [
 
 const statusColors: Record<string, string> = {
   new: "bg-gray-100 text-gray-800",
+  invited: "bg-amber-100 text-amber-800",
   contacted: "bg-blue-100 text-blue-800",
   engaged: "bg-teal-100 text-teal-800",
   sample_sent: "bg-orange-100 text-orange-800",
@@ -48,6 +53,7 @@ const statusColors: Record<string, string> = {
 
 const statusLabels: Record<string, string> = {
   new: "New",
+  invited: "Invited",
   contacted: "Contacted",
   engaged: "Engaged",
   sample_sent: "Sample Sent",
@@ -59,6 +65,7 @@ const statusLabels: Record<string, string> = {
 
 const typeBadgeColors: Record<string, string> = {
   linkedin_message: "bg-blue-100 text-blue-800",
+  connection_request: "bg-amber-100 text-amber-800",
   email: "bg-teal-100 text-teal-800",
   phone: "bg-green-100 text-green-800",
   note: "bg-gray-100 text-gray-800",
@@ -68,6 +75,7 @@ const typeBadgeColors: Record<string, string> = {
 
 const typeLabels: Record<string, string> = {
   linkedin_message: "LinkedIn",
+  connection_request: "Connection Request",
   email: "Email",
   phone: "Phone",
   note: "Note",
@@ -157,6 +165,8 @@ export default function LeadDetailClient({
     null
   );
   const [shipmentError, setShipmentError] = useState<string | null>(null);
+  const [parkOpen, setParkOpen] = useState(false);
+  const [parkError, setParkError] = useState<string | null>(null);
 
   const contact = lead.contact;
   const company = lead.company;
@@ -170,6 +180,29 @@ export default function LeadDetailClient({
       router.refresh();
     });
   }
+
+  async function handleUnpark() {
+    setParkError(null);
+    try {
+      const res = await fetch(`/api/leads/${lead.id}/wake-up`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wake_up_at: null }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      router.refresh();
+    } catch (e) {
+      setParkError(e instanceof Error ? e.message : "Failed to unpark");
+    }
+  }
+
+  // Lead is "parked" while wake_up_at is in the future. The Today queue
+  // skips it; we surface the parked state up top so Sean can read or undo.
+  const wakeUpAt: string | null = lead.wake_up_at ?? null;
+  const isParked =
+    !!wakeUpAt && new Date(wakeUpAt).getTime() > Date.now();
+  const wakeUpReason: string | null = lead.wake_up_reason ?? null;
 
   function handleFollowUpChange(date: string) {
     startTransition(async () => {
@@ -274,6 +307,17 @@ export default function LeadDetailClient({
           >
             {statusLabels[lead.status] ?? lead.status}
           </span>
+          {!isParked && (
+            <button
+              type="button"
+              onClick={() => setParkOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-navy/20 px-3 py-1.5 text-sm font-medium text-navy transition-colors hover:bg-navy hover:text-white"
+              title="Park this lead — hide from Today until a future date"
+            >
+              <Moon className="h-4 w-4" />
+              Park
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -303,6 +347,62 @@ export default function LeadDetailClient({
           </button>
         </div>
       </div>
+
+      {/* Parked banner */}
+      {isParked && (
+        <div className="mt-4 rounded-md border border-navy/20 bg-navy/5 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <Moon className="h-4 w-4 shrink-0 text-navy" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-navy">
+                Parked until{" "}
+                {new Date(wakeUpAt as string).toLocaleDateString([], {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+              </p>
+              {wakeUpReason && (
+                <p className="mt-0.5 text-xs text-charcoal">
+                  <span className="font-semibold text-steel">Reason:</span>{" "}
+                  {wakeUpReason}
+                </p>
+              )}
+              <p className="mt-0.5 text-[11px] text-steel">
+                Hidden from the Today queue until then.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleUnpark}
+              className="inline-flex items-center gap-1.5 rounded-md border border-navy/30 bg-white px-3 py-1.5 text-sm font-semibold text-navy transition-colors hover:bg-navy hover:text-white"
+            >
+              <Sun className="h-3.5 w-3.5" />
+              Unpark
+            </button>
+          </div>
+          {parkError && (
+            <p className="mt-2 text-xs font-semibold text-red">{parkError}</p>
+          )}
+        </div>
+      )}
+
+      {parkOpen && (
+        <ParkLeadModal
+          leadId={lead.id}
+          leadName={
+            contact
+              ? `${contact.first_name} ${contact.last_name}`
+              : "this lead"
+          }
+          onClose={() => setParkOpen(false)}
+          onSaved={() => {
+            setParkOpen(false);
+            router.refresh();
+          }}
+        />
+      )}
 
       {/* Sample request banner */}
       {sampleRequest && (

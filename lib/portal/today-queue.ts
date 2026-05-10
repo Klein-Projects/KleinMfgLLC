@@ -37,6 +37,7 @@ interface LeadRow {
   status: string;
   connection_accepted_at: string | null;
   follow_up_date: string | null;
+  wake_up_at: string | null;
   email: string | null;
   linkedin_url: string | null;
   linkedin_thread_id: string | null;
@@ -263,8 +264,15 @@ export function evaluateQueue(input: EngineInput): TodayCard[] {
   }
 
   const cards: TodayCard[] = [];
+  const nowMs = Date.now();
 
   for (const lead of leads) {
+    // Long-term snooze ("Park lead", Phase 1.5): while wake_up_at is
+    // in the future, the lead is invisible to the Today queue.
+    if (lead.wake_up_at && new Date(lead.wake_up_at).getTime() > nowMs) {
+      continue;
+    }
+
     const acts = activitiesByLead.get(lead.id) ?? [];
 
     // Skip the entire lead if they've replied since the last outbound.
@@ -346,7 +354,7 @@ async function fetchEngineInputs(
       .from("leads")
       .select(
         `
-        id, status, connection_accepted_at, follow_up_date,
+        id, status, connection_accepted_at, follow_up_date, wake_up_at,
         email, linkedin_url, linkedin_thread_id, phone,
         contact:contacts(id, first_name, last_name, title, email, linkedin_url, phone),
         company:companies(id, name)
