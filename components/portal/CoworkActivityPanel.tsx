@@ -32,9 +32,11 @@ const POLL_INTERVAL_MS = 60_000;
 
 const TASK_LABELS: Record<string, string> = {
   "klein-sent-invitations-scraper": "Sent invitations",
+  "klein-dm-scraper": "DM inbox",
   "klein-dm-inbox-scraper": "DM inbox",
   "klein-deep-historical-sweep": "Historical sweep",
   "klein-weekly-digest": "Weekly digest",
+  "klein-sync-poller": "Sync poller",
 };
 
 function asArray<T = unknown>(v: unknown): T[] {

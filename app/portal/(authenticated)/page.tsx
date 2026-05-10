@@ -5,60 +5,32 @@ import {
   Bell,
   Send,
   Trophy,
+  ArrowRight,
 } from "lucide-react";
 import FollowUpPanel from "@/components/portal/FollowUpPanel";
 
 // ── Helpers ──
 
-const PIPELINE_STAGES = [
-  "new",
-  "contacted",
-  "engaged",
-  "sample_sent",
-  "quoted",
-  "won",
-  "lost",
-  "nurture",
-] as const;
-
-const stageColors: Record<string, string> = {
-  new: "bg-navy",
-  contacted: "bg-navy",
-  engaged: "bg-navy",
-  sample_sent: "bg-navy",
-  quoted: "bg-navy",
-  won: "bg-red",
-  lost: "bg-steel",
-  nurture: "bg-navy/60",
-};
-
-const stageLabels: Record<string, string> = {
-  new: "New",
-  contacted: "Contacted",
-  engaged: "Engaged",
-  sample_sent: "Sample Sent",
-  quoted: "Quoted",
-  won: "Won",
-  lost: "Lost",
-  nurture: "Nurture",
-};
-
 const typeBadgeColors: Record<string, string> = {
   linkedin_message: "bg-blue-100 text-blue-800",
+  connection_request: "bg-blue-100 text-blue-800",
   email: "bg-teal-100 text-teal-800",
   phone: "bg-green-100 text-green-800",
   note: "bg-gray-100 text-gray-800",
   sample_sent: "bg-orange-100 text-orange-800",
   follow_up: "bg-purple-100 text-purple-800",
+  web_order: "bg-emerald-100 text-emerald-800",
 };
 
 const typeLabels: Record<string, string> = {
   linkedin_message: "LinkedIn",
+  connection_request: "Connect Req",
   email: "Email",
   phone: "Phone",
   note: "Note",
   sample_sent: "Sample Sent",
   follow_up: "Follow-Up",
+  web_order: "Web Order",
 };
 
 function relativeDate(dateStr: string): string {
@@ -77,25 +49,12 @@ function relativeDate(dateStr: string): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function followUpLabel(dateStr: string): {
-  text: string;
-  color: string;
-} {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const date = new Date(dateStr);
-  date.setHours(0, 0, 0, 0);
-  const diffDays = Math.round(
-    (date.getTime() - today.getTime()) / 86400000
-  );
-
-  if (diffDays < 0) return { text: "Overdue", color: "text-red" };
-  if (diffDays === 0) return { text: "Today", color: "text-orange-600" };
-  if (diffDays === 1) return { text: "Tomorrow", color: "text-navy" };
-  return {
-    text: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-    color: "text-charcoal",
-  };
+function formatUSD(n: number): string {
+  return n.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
 }
 
 // ── Page ──
@@ -104,19 +63,12 @@ export default async function PortalDashboard() {
   const supabase = createClient();
 
   const todayISO = new Date().toISOString().split("T")[0];
-  const threeDaysOut = new Date(
-    Date.now() + 3 * 86400000
-  )
+  const nowISO = new Date().toISOString();
+  const threeDaysOut = new Date(Date.now() + 3 * 86400000)
     .toISOString()
     .split("T")[0];
-  const yearStart = new Date(
-    new Date().getFullYear(),
-    0,
-    1
-  ).toISOString();
-  const thirtyDaysAgo = new Date(
-    Date.now() - 30 * 86400000
-  ).toISOString();
+  const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString();
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
 
   // Fetch all data in parallel
   const [
@@ -124,43 +76,45 @@ export default async function PortalDashboard() {
     followUpsDueRes,
     samplesSentRes,
     winsRes,
-    allLeadsRes,
     followUpListRes,
     recentActivityRes,
+    paidOrdersYtdRes,
+    sampleOrdersYtdRes,
+    wonLeadsRes,
   ] = await Promise.all([
-    // Active leads count
+    // Active leads count — excludes terminal statuses AND parked leads.
     supabase
       .from("leads")
       .select("id", { count: "exact", head: true })
-      .not("status", "in", "(won,lost)"),
+      .not("status", "in", "(won,lost)")
+      .or(`wake_up_at.is.null,wake_up_at.lt.${nowISO}`),
 
-    // Follow-ups due count
+    // Follow-ups due count — also honors wake_up_at so parked leads
+    // don't pad the number Sean acts on first thing in the morning.
     supabase
       .from("leads")
       .select("id", { count: "exact", head: true })
       .lte("follow_up_date", todayISO)
-      .not("status", "in", "(won,lost)"),
+      .not("status", "in", "(won,lost)")
+      .or(`wake_up_at.is.null,wake_up_at.lt.${nowISO}`),
 
-    // Samples sent (30 days)
+    // Samples sent (30 days) — count of sample_sent activity rows.
     supabase
       .from("activities")
       .select("id", { count: "exact", head: true })
       .eq("type", "sample_sent")
       .gte("created_at", thirtyDaysAgo),
 
-    // Wins this year
+    // Wins this year — leads currently marked won whose last_activity_at
+    // is within this calendar year (best available proxy for "won this
+    // year" without a dedicated won_at column).
     supabase
       .from("leads")
       .select("id", { count: "exact", head: true })
       .eq("status", "won")
-      .gte("created_at", yearStart),
+      .gte("last_activity_at", yearStart),
 
-    // All leads for pipeline
-    supabase.from("leads").select("status"),
-
-    // Follow-up list (overdue + next 3 days). The Today page is the
-    // canonical cadence-driven outreach surface; this widget remains as
-    // a manual follow_up_date-based snapshot.
+    // Follow-up list — overdue + next 3 days, parked leads excluded.
     supabase
       .from("leads")
       .select(
@@ -168,6 +122,7 @@ export default async function PortalDashboard() {
       )
       .lte("follow_up_date", threeDaysOut)
       .not("status", "in", "(won,lost,invited)")
+      .or(`wake_up_at.is.null,wake_up_at.lt.${nowISO}`)
       .order("follow_up_date", { ascending: true })
       .limit(15),
 
@@ -179,6 +134,33 @@ export default async function PortalDashboard() {
       )
       .order("created_at", { ascending: false })
       .limit(10),
+
+    // YTD revenue + parts shipped — paid (non-sample) orders only.
+    supabase
+      .from("orders")
+      .select("total_charged, product_6in_qty, product_11in_qty, shipped_at")
+      .eq("is_sample", false)
+      .gte("created_at", yearStart),
+
+    // YTD free samples shipped — sample orders shipped this year.
+    supabase
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .eq("is_sample", true)
+      .eq("shipping_status", "shipped")
+      .gte("shipped_at", yearStart),
+
+    // Won deals this year — list with contact + company + recency, used
+    // for the "This Year" panel's drill-down view.
+    supabase
+      .from("leads")
+      .select(
+        "id, last_activity_at, contact:contacts(first_name, last_name), company:companies(name)"
+      )
+      .eq("status", "won")
+      .gte("last_activity_at", yearStart)
+      .order("last_activity_at", { ascending: false })
+      .limit(20),
   ]);
 
   const activeLeads = activeLeadsRes.count ?? 0;
@@ -186,18 +168,32 @@ export default async function PortalDashboard() {
   const samplesSent = samplesSentRes.count ?? 0;
   const winsThisYear = winsRes.count ?? 0;
 
-  // Pipeline counts
-  const pipelineCounts: Record<string, number> = {};
-  for (const stage of PIPELINE_STAGES) pipelineCounts[stage] = 0;
-  if (allLeadsRes.data) {
-    for (const lead of allLeadsRes.data) {
-      pipelineCounts[lead.status] = (pipelineCounts[lead.status] || 0) + 1;
-    }
-  }
-  const maxPipelineCount = Math.max(...Object.values(pipelineCounts), 1);
-
   const followUpList = (followUpListRes.data ?? []) as any[];
   const recentActivity = (recentActivityRes.data ?? []) as any[];
+
+  // ── This Year totals ──
+  const paidOrders = (paidOrdersYtdRes.data ?? []) as Array<{
+    total_charged: number;
+    product_6in_qty: number;
+    product_11in_qty: number;
+    shipped_at: string | null;
+  }>;
+  const revenueYtd = paidOrders.reduce(
+    (s, o) => s + Number(o.total_charged ?? 0),
+    0,
+  );
+  const partsSoldYtd = paidOrders.reduce(
+    (s, o) => s + (o.product_6in_qty ?? 0) + (o.product_11in_qty ?? 0),
+    0,
+  );
+  const ordersShippedYtd = paidOrders.filter((o) => !!o.shipped_at).length;
+  const samplesShippedYtd = sampleOrdersYtdRes.count ?? 0;
+  const wonDeals = (wonLeadsRes.data ?? []) as unknown as Array<{
+    id: string;
+    last_activity_at: string;
+    contact: { first_name: string; last_name: string } | null;
+    company: { name: string } | null;
+  }>;
 
   const statCards = [
     {
@@ -205,24 +201,28 @@ export default async function PortalDashboard() {
       value: activeLeads,
       icon: Users,
       alert: false,
+      href: "/portal/leads",
     },
     {
       label: "Follow-Ups Due",
       value: followUpsDue,
       icon: Bell,
       alert: followUpsDue > 0,
+      href: "/portal/today",
     },
     {
       label: "Samples Sent (30d)",
       value: samplesSent,
       icon: Send,
       alert: false,
+      href: "/portal/shipments?tab=samples",
     },
     {
       label: "Wins This Year",
       value: winsThisYear,
       icon: Trophy,
       alert: false,
+      href: "/portal/leads?status=won&park=all",
     },
   ];
 
@@ -231,12 +231,13 @@ export default async function PortalDashboard() {
       {/* Page title */}
       <h1 className="text-2xl font-bold text-navy">Dashboard</h1>
 
-      {/* ── STAT CARDS ── */}
+      {/* ── STAT CARDS (now click-throughs) ── */}
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {statCards.map((card) => (
-          <div
+          <Link
             key={card.label}
-            className="rounded-lg border border-navy/10 bg-white p-5 shadow-sm"
+            href={card.href}
+            className="group rounded-lg border border-navy/10 bg-white p-5 shadow-sm transition-all hover:border-navy/40 hover:shadow"
           >
             <div className="flex items-center justify-between">
               <card.icon className="h-5 w-5 text-steel" strokeWidth={1.5} />
@@ -247,63 +248,116 @@ export default async function PortalDashboard() {
               )}
             </div>
             <p className="mt-3 text-3xl font-bold text-navy">{card.value}</p>
-            <p className="mt-1 text-sm text-charcoal/60">{card.label}</p>
-          </div>
+            <p className="mt-1 flex items-center gap-1 text-sm text-charcoal/60">
+              {card.label}
+              <ArrowRight className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />
+            </p>
+          </Link>
         ))}
       </div>
 
-      {/* ── MIDDLE ROW: Pipeline + Follow-Ups ── */}
+      {/* ── MIDDLE ROW: This Year + Follow-Ups ── */}
       <div className="mt-8 grid gap-6 lg:grid-cols-[3fr_2fr]">
-        {/* Pipeline by Stage */}
-        <div className="rounded-lg border border-navy/10 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-navy">
-            Pipeline by Stage
-          </h2>
-          <div className="mt-5 space-y-3">
-            {PIPELINE_STAGES.map((stage) => {
-              const count = pipelineCounts[stage];
-              const widthPct = Math.max(
-                (count / maxPipelineCount) * 100,
-                count > 0 ? 8 : 0
-              );
-              return (
-                <Link
-                  key={stage}
-                  href={`/portal/leads?status=${stage}`}
-                  className="group flex items-center gap-3"
-                >
-                  <span className="w-24 text-right text-sm text-charcoal/70 group-hover:text-navy">
-                    {stageLabels[stage]}
-                  </span>
-                  <div className="flex-1">
-                    <div
-                      className={`${stageColors[stage]} h-6 rounded transition-all group-hover:opacity-80`}
-                      style={{ width: `${widthPct}%` }}
-                    />
-                  </div>
-                  <span className="w-8 text-right text-sm font-semibold text-navy">
-                    {count}
-                  </span>
-                </Link>
-              );
-            })}
+        {/* This Year — replaces Pipeline by Stage */}
+        <section className="rounded-lg border border-navy/10 bg-white p-6 shadow-sm">
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-lg font-semibold text-navy">This Year</h2>
+            <span className="text-xs text-steel">
+              Year-to-date · {new Date().getFullYear()}
+            </span>
           </div>
-        </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <KpiTile
+              label="Revenue"
+              value={formatUSD(revenueYtd)}
+              hint={`${ordersShippedYtd} of ${paidOrders.length} order${paidOrders.length === 1 ? "" : "s"} shipped`}
+            />
+            <KpiTile
+              label="Parts sold"
+              value={partsSoldYtd.toLocaleString()}
+              hint="6in + 11in scrapers (paid)"
+            />
+            <KpiTile
+              label="Free samples shipped"
+              value={samplesShippedYtd.toLocaleString()}
+              hint={`Drives the ${samplesSent} you sent in the last 30d`}
+            />
+            <KpiTile
+              label="Won deals"
+              value={winsThisYear.toLocaleString()}
+              hint={
+                wonDeals.length > 0
+                  ? `Most recent · ${relativeDate(wonDeals[0].last_activity_at)}`
+                  : "No wins logged yet"
+              }
+            />
+          </div>
+
+          {/* Won-deals drill-down list */}
+          <div className="mt-5 border-t border-navy/10 pt-4">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-steel">
+              Won deals this year
+            </h3>
+            {wonDeals.length === 0 ? (
+              <p className="mt-3 text-sm text-steel">
+                No wins logged this year yet. Mark a lead{" "}
+                <span className="font-semibold">won</span> on its detail page
+                and it will surface here.
+              </p>
+            ) : (
+              <ul className="mt-3 divide-y divide-navy/10">
+                {wonDeals.map((d) => {
+                  const name = d.contact
+                    ? `${d.contact.first_name} ${d.contact.last_name}`
+                    : "Unknown";
+                  const company = d.company?.name ?? "";
+                  return (
+                    <li key={d.id}>
+                      <Link
+                        href={`/portal/leads/${d.id}`}
+                        className="flex items-center justify-between gap-3 py-2 hover:bg-offwhite/40"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-navy">
+                            {name}
+                          </p>
+                          {company && (
+                            <p className="truncate text-xs text-steel">
+                              {company}
+                            </p>
+                          )}
+                        </div>
+                        <span className="whitespace-nowrap text-xs text-steel">
+                          {relativeDate(d.last_activity_at)}
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </section>
 
         {/* Follow-Ups Due */}
-        <div className="rounded-lg border border-navy/10 bg-white p-6 shadow-sm">
+        <section className="rounded-lg border border-navy/10 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-navy">Follow-Ups Due</h2>
             <Link
-              href="/portal/leads"
+              href="/portal/today"
               className="text-xs text-steel hover:text-navy"
             >
-              View all
+              Open Today →
             </Link>
           </div>
+          <p className="mt-1 text-xs text-steel">
+            Overdue + next 3 days, by manual follow-up date. Parked leads
+            hidden.
+          </p>
 
           <FollowUpPanel leads={followUpList} />
-        </div>
+        </section>
       </div>
 
       {/* ── RECENT ACTIVITY ── */}
@@ -375,6 +429,26 @@ export default async function PortalDashboard() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function KpiTile({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+}) {
+  return (
+    <div className="rounded-md border border-navy/10 bg-offwhite/30 px-4 py-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-steel">
+        {label}
+      </p>
+      <p className="mt-1 text-2xl font-bold tabular-nums text-navy">{value}</p>
+      <p className="mt-0.5 text-[11px] text-steel">{hint}</p>
     </div>
   );
 }
