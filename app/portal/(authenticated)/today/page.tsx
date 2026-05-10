@@ -1,5 +1,6 @@
 import { fetchTodayQueue, todayInNY } from "@/lib/portal/today-queue";
 import { createClient } from "@/lib/supabase/server";
+import CoworkActivityPanel from "@/components/portal/CoworkActivityPanel";
 import TodayCards from "./TodayCards";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export default async function TodayPage() {
 
   return (
     <div className="p-6 lg:p-8">
-      <header className="mb-1">
+      <header className="mb-6">
         <h1 className="text-2xl font-bold text-navy">Today</h1>
         <p className="mt-1 text-sm text-steel">
           {headerDate} —{" "}
@@ -30,6 +31,8 @@ export default async function TodayPage() {
             : `${cards.length} follow-up${cards.length === 1 ? "" : "s"} due`}
         </p>
       </header>
+
+      <CoworkActivityPanel />
 
       <TodayCards cards={cards} />
     </div>
