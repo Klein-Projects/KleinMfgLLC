@@ -240,18 +240,17 @@ export async function POST(
       // click Approve and get a stuck-pending row he had to manually
       // reject. The scraper still produced useful signal (headline,
       // thread_id, sometimes a company name) — we want it captured.
-      let existingDup:
-        | {
-            id: string;
-            contact_id: string | null;
-            company_id: string | null;
-            linkedin_thread_id: string | null;
-            contact: {
-              title: string | null;
-              linkedin_profile_text: string | null;
-            } | null;
-          }
-        | null = null;
+      type ExistingDup = {
+        id: string;
+        contact_id: string | null;
+        company_id: string | null;
+        linkedin_thread_id: string | null;
+        contact: {
+          title: string | null;
+          linkedin_profile_text: string | null;
+        } | null;
+      };
+      let existingDup: ExistingDup | null = null;
       if (linkedinUrl) {
         const { data: dup } = await supabase
           .from("leads")
@@ -261,7 +260,7 @@ export async function POST(
           .eq("linkedin_url", linkedinUrl)
           .limit(1)
           .maybeSingle();
-        if (dup?.id) existingDup = dup as unknown as typeof existingDup;
+        if (dup?.id) existingDup = dup as unknown as ExistingDup;
       }
 
       if (existingDup) {
