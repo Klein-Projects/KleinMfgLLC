@@ -10,6 +10,11 @@ import { createClient } from "@/lib/supabase/server";
 //   new_lead       — creates company (if name given and not present),
 //                    contact, and lead with proposed_status; stamps
 //                    invited_at when proposed_status='invited'.
+//                    If a lead at the same linkedin_url already exists,
+//                    instead absorbs the payload's non-null fields
+//                    (title, headline → linkedin_profile_text, company,
+//                    linkedin_thread_id) into the existing lead and
+//                    marks the row approved.
 //   new_activity   — appends an activity row to the matched lead.
 //   stage_change   — updates lead.status (and connection_accepted_at
 //                    when the proposal includes set_connection_accepted_at,
@@ -227,101 +232,170 @@ export async function POST(
       const { first, last } = splitName(name);
       const company = asStr(payload.company);
       const title = asStr(payload.title);
+      const headline = asStr(payload.headline);
 
-      // Defensive: a lead may have been created between the proposal
-      // landing and Sean clicking approve. If we already have one,
-      // bail out cleanly rather than double-create.
+      // If a lead already exists at this linkedin_url, absorb the
+      // payload's non-null fields into it instead of erroring. This
+      // closes the "Lead already exists" 409 trap where Sean would
+      // click Approve and get a stuck-pending row he had to manually
+      // reject. The scraper still produced useful signal (headline,
+      // thread_id, sometimes a company name) — we want it captured.
+      let existingDup:
+        | {
+            id: string;
+            contact_id: string | null;
+            company_id: string | null;
+            linkedin_thread_id: string | null;
+            contact: {
+              title: string | null;
+              linkedin_profile_text: string | null;
+            } | null;
+          }
+        | null = null;
       if (linkedinUrl) {
-        const dup = await supabase
+        const { data: dup } = await supabase
           .from("leads")
-          .select("id")
+          .select(
+            "id, contact_id, company_id, linkedin_thread_id, contact:contacts(title, linkedin_profile_text)",
+          )
           .eq("linkedin_url", linkedinUrl)
           .limit(1)
           .maybeSingle();
-        if (dup.data?.id) {
-          return NextResponse.json(
-            {
-              error: "Lead already exists for that linkedin_url",
-              lead_id: dup.data.id,
-            },
-            { status: 409 },
-          );
-        }
+        if (dup?.id) existingDup = dup as unknown as typeof existingDup;
       }
 
-      let companyId: string | null = null;
-      if (company) {
-        const { data: existingCompany } = await supabase
-          .from("companies")
-          .select("id")
-          .eq("name", company)
-          .limit(1)
-          .maybeSingle();
-        if (existingCompany?.id) {
-          companyId = existingCompany.id;
-        } else {
-          const { data: newCompany, error: cErr } = await supabase
-            .from("companies")
-            .insert({ name: company })
-            .select("id")
-            .single();
+      if (existingDup) {
+        const contactPatch: Record<string, unknown> = {};
+        if (existingDup.contact && !existingDup.contact.title && title) {
+          contactPatch.title = title;
+        }
+        if (
+          existingDup.contact &&
+          !existingDup.contact.linkedin_profile_text &&
+          headline
+        ) {
+          contactPatch.linkedin_profile_text = headline;
+        }
+        if (existingDup.contact_id && Object.keys(contactPatch).length > 0) {
+          const { error: cErr } = await supabase
+            .from("contacts")
+            .update(contactPatch)
+            .eq("id", existingDup.contact_id);
           if (cErr) throw new Error(cErr.message);
-          companyId = newCompany.id;
         }
-      }
 
-      const { data: newContact, error: contactErr } = await supabase
-        .from("contacts")
-        .insert({
-          first_name: first || name,
-          last_name: last || "",
-          title,
-          linkedin_url: linkedinUrl,
+        const leadPatch: Record<string, unknown> = {};
+        if (threadId && !existingDup.linkedin_thread_id) {
+          leadPatch.linkedin_thread_id = threadId;
+        }
+        if (!existingDup.company_id && company) {
+          const { data: existingCompany } = await supabase
+            .from("companies")
+            .select("id")
+            .eq("name", company)
+            .limit(1)
+            .maybeSingle();
+          let companyId: string | null = existingCompany?.id ?? null;
+          if (!companyId) {
+            const { data: newCompany, error: cErr } = await supabase
+              .from("companies")
+              .insert({ name: company })
+              .select("id")
+              .single();
+            if (cErr) throw new Error(cErr.message);
+            companyId = newCompany!.id;
+          }
+          leadPatch.company_id = companyId;
+        }
+        if (Object.keys(leadPatch).length > 0) {
+          const { error: lErr } = await supabase
+            .from("leads")
+            .update(leadPatch)
+            .eq("id", existingDup.id);
+          if (lErr) throw new Error(lErr.message);
+        }
+
+        appliedSummary = {
+          merged_into_existing_lead_id: existingDup.id,
+          enriched_contact_fields: Object.keys(contactPatch),
+          enriched_lead_fields: Object.keys(leadPatch),
+        };
+      } else {
+        let companyId: string | null = null;
+        if (company) {
+          const { data: existingCompany } = await supabase
+            .from("companies")
+            .select("id")
+            .eq("name", company)
+            .limit(1)
+            .maybeSingle();
+          if (existingCompany?.id) {
+            companyId = existingCompany.id;
+          } else {
+            const { data: newCompany, error: cErr } = await supabase
+              .from("companies")
+              .insert({ name: company })
+              .select("id")
+              .single();
+            if (cErr) throw new Error(cErr.message);
+            companyId = newCompany.id;
+          }
+        }
+
+        const { data: newContact, error: contactErr } = await supabase
+          .from("contacts")
+          .insert({
+            first_name: first || name,
+            last_name: last || "",
+            title,
+            linkedin_url: linkedinUrl,
+            linkedin_profile_text: headline,
+            company_id: companyId,
+          })
+          .select("id")
+          .single();
+        if (contactErr || !newContact) {
+          throw new Error(contactErr?.message ?? "Failed to create contact");
+        }
+
+        const nowISO = new Date().toISOString();
+        const leadInsert: Record<string, unknown> = {
+          contact_id: newContact.id,
           company_id: companyId,
-        })
-        .select("id")
-        .single();
-      if (contactErr || !newContact) {
-        throw new Error(contactErr?.message ?? "Failed to create contact");
-      }
+          status: proposedStatus,
+          source: "linkedin",
+          linkedin_url: linkedinUrl,
+          linkedin_thread_id: threadId,
+          last_activity_at: nowISO,
+        };
+        if (proposedStatus === "invited") {
+          leadInsert.invited_at = asStr(payload.observed_at) ?? nowISO;
+        }
+        if (
+          proposedStatus === "contacted" ||
+          proposedStatus === "engaged" ||
+          proposedStatus === "sample_sent"
+        ) {
+          // The scraper found an accepted thread — stamp acceptance time.
+          leadInsert.connection_accepted_at =
+            asStr(payload.connection_accepted_at) ??
+            asStr(payload.first_message_at) ??
+            asStr(payload.observed_at) ??
+            nowISO;
+        }
 
-      const nowISO = new Date().toISOString();
-      const leadInsert: Record<string, unknown> = {
-        contact_id: newContact.id,
-        company_id: companyId,
-        status: proposedStatus,
-        source: "linkedin",
-        linkedin_url: linkedinUrl,
-        linkedin_thread_id: threadId,
-        last_activity_at: nowISO,
-      };
-      if (proposedStatus === "invited") {
-        leadInsert.invited_at = asStr(payload.observed_at) ?? nowISO;
-      }
-      if (
-        proposedStatus === "contacted" ||
-        proposedStatus === "engaged" ||
-        proposedStatus === "sample_sent"
-      ) {
-        // The scraper found an accepted thread — stamp acceptance time.
-        leadInsert.connection_accepted_at =
-          asStr(payload.connection_accepted_at) ??
-          asStr(payload.first_message_at) ??
-          asStr(payload.observed_at) ??
-          nowISO;
-      }
+        const { data: newLead, error: leadErr } = await supabase
+          .from("leads")
+          .insert(leadInsert)
+          .select("id, status")
+          .single();
+        if (leadErr || !newLead) {
+          await supabase.from("contacts").delete().eq("id", newContact.id);
+          throw new Error(leadErr?.message ?? "Failed to create lead");
+        }
 
-      const { data: newLead, error: leadErr } = await supabase
-        .from("leads")
-        .insert(leadInsert)
-        .select("id, status")
-        .single();
-      if (leadErr || !newLead) {
-        await supabase.from("contacts").delete().eq("id", newContact.id);
-        throw new Error(leadErr?.message ?? "Failed to create lead");
+        appliedSummary = { lead_id: newLead.id, status: newLead.status };
       }
-
-      appliedSummary = { lead_id: newLead.id, status: newLead.status };
     } else if (kind === "new_activity") {
       const lead = await resolveLead();
       if (!lead) {
