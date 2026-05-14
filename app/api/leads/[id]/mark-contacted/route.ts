@@ -9,11 +9,23 @@ import { createClient } from "@/lib/supabase/server";
 //   channel:           "linkedin" | "email" | "phone",
 //   action_on_send:    "none" | "mark_lost",
 //   auto_log_summary?: string,
+//   sent_at?:          string                // ISO date (YYYY-MM-DD) or ISO
+//                                            // datetime. Used to backdate
+//                                            // both the activity row and
+//                                            // lead.last_activity_at when
+//                                            // Sean is catching the portal
+//                                            // up on a message he sent
+//                                            // off-platform days/weeks ago.
+//                                            // Must not be in the future.
+//                                            // Defaults to now() when omitted.
 // }
 //
 // Effect:
 //   - Inserts an activity (type derived from channel; direction=outbound;
-//     prompt_id linked).
+//     prompt_id linked; created_at = sent_at or now()).
+//   - Sets leads.last_activity_at = sent_at or now() so the cadence engine
+//     measures the next rule's window from when the message actually went
+//     out, not from when the row got logged.
 //   - If action_on_send === "mark_lost", advances lead.status to "lost".
 //   - Does NOT bump follow_up_date — the cadence engine drives the queue
 //     now; follow_up_date is only a fallback for legacy paths.
@@ -47,6 +59,32 @@ export async function POST(
       ? body.auto_log_summary.trim()
       : "Sent follow-up via Today page";
 
+  // Optional backdating: sent_at lets Sean log a message he sent off-portal
+  // weeks ago so the cadence engine measures the next rule from then,
+  // not from the click moment.
+  let sentAtISO: string | null = null;
+  const sentAtRaw = typeof body?.sent_at === "string" ? body.sent_at.trim() : "";
+  if (sentAtRaw) {
+    const parsed = /^\d{4}-\d{2}-\d{2}$/.test(sentAtRaw)
+      ? new Date(sentAtRaw + "T12:00:00Z") // noon UTC for date-only input
+      : new Date(sentAtRaw);
+    if (Number.isNaN(parsed.getTime())) {
+      return NextResponse.json(
+        { error: "sent_at is not a valid ISO date" },
+        { status: 400 },
+      );
+    }
+    // Tolerance: allow up to 1 day in the future to absorb timezone slop.
+    if (parsed.getTime() > Date.now() + 24 * 60 * 60 * 1000) {
+      return NextResponse.json(
+        { error: "sent_at cannot be in the future" },
+        { status: 400 },
+      );
+    }
+    sentAtISO = parsed.toISOString();
+  }
+  const effectiveTimestamp = sentAtISO ?? new Date().toISOString();
+
   const { data: lead, error: fetchErr } = await supabase
     .from("leads")
     .select("status, follow_up_date, last_activity_at")
@@ -72,15 +110,19 @@ export async function POST(
         ? "phone"
         : "linkedin_message";
 
+  const activityInsert: Record<string, unknown> = {
+    lead_id: leadId,
+    type: activityType,
+    summary,
+    prompt_id: promptId,
+    direction: "outbound",
+  };
+  if (sentAtISO) {
+    activityInsert.created_at = sentAtISO;
+  }
   const { data: activity, error: actErr } = await supabase
     .from("activities")
-    .insert({
-      lead_id: leadId,
-      type: activityType,
-      summary,
-      prompt_id: promptId,
-      direction: "outbound",
-    })
+    .insert(activityInsert)
     .select("id")
     .single();
 
@@ -92,7 +134,7 @@ export async function POST(
   }
 
   const updates: Record<string, unknown> = {
-    last_activity_at: new Date().toISOString(),
+    last_activity_at: effectiveTimestamp,
   };
   let newStatus = prevStatus;
   if (actionOnSend === "mark_lost") {

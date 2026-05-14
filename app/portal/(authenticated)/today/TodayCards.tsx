@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Moon,
   X,
+  CalendarCheck,
 } from "lucide-react";
 import type { TodayCard } from "@/lib/portal/today-queue";
 import { linkedinUrlFor } from "@/lib/portal/today-queue";
@@ -172,6 +173,59 @@ export default function TodayCards({ cards }: { cards: TodayCard[] }) {
     [pendingId, showUndo],
   );
 
+  const onAlreadySent = useCallback(
+    async (card: TodayCard, sentAtISO: string) => {
+      if (pendingId) return;
+      setPendingId(card.lead_id);
+      setError(null);
+      try {
+        const res = await fetch(
+          `/api/leads/${card.lead_id}/mark-contacted`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              rule_id: card.rule.id,
+              prompt_id: card.recommended_prompt.id,
+              channel: card.channel,
+              action_on_send: card.rule.action_on_send,
+              auto_log_summary: `Backfilled "${card.rule.name}" (sent off-portal)`,
+              sent_at: sentAtISO,
+            }),
+          },
+        );
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error ?? `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        const markedLost = card.rule.action_on_send === "mark_lost";
+        const stampLabel = formatStampForSentAt(sentAtISO);
+        setActioned((prev) => ({
+          ...prev,
+          [card.lead_id]: {
+            stamp: stampLabel,
+            ruleName: card.rule.name,
+            markedLost,
+          },
+        }));
+        showUndo({
+          message: `Logged "${card.rule.name}" for ${card.contact.full_name} as sent ${stampLabel}`,
+          payload: data.undo,
+          leadId: card.lead_id,
+        });
+        // Refresh so the cadence engine re-evaluates and the next-stage
+        // prompt surfaces if its window has already opened.
+        router.refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to backfill");
+      } finally {
+        setPendingId(null);
+      }
+    },
+    [pendingId, router, showUndo],
+  );
+
   const onMarkNotInterested = useCallback(
     async (card: TodayCard) => {
       if (pendingId) return;
@@ -242,6 +296,7 @@ export default function TodayCards({ cards }: { cards: TodayCard[] }) {
             onMarkNotInterested={() => onMarkNotInterested(card)}
             onAddLinkedIn={() => setEditingLinkedInFor(card)}
             onPark={() => setParkingFor(card)}
+            onAlreadySent={(sentAtISO) => onAlreadySent(card, sentAtISO)}
           />
         ))}
       </div>
@@ -321,6 +376,7 @@ function CardView({
   onMarkNotInterested,
   onAddLinkedIn,
   onPark,
+  onAlreadySent,
 }: {
   card: TodayCard;
   pending: boolean;
@@ -328,7 +384,10 @@ function CardView({
   onMarkNotInterested: () => void;
   onAddLinkedIn: () => void;
   onPark: () => void;
+  onAlreadySent: (sentAtISO: string) => void;
 }) {
+  const [showSentPicker, setShowSentPicker] = useState(false);
+  const [sentDate, setSentDate] = useState<string>(() => isoDateToday());
   const linkedinUrl = linkedinUrlFor(card);
   const overdueLabel = overdueText(card.trigger.days_overdue);
   const overdueClass = overdueChipClass(card.trigger.days_overdue);
@@ -430,6 +489,15 @@ function CardView({
             Add LinkedIn URL
           </button>
         )}
+        <button
+          onClick={() => setShowSentPicker((v) => !v)}
+          disabled={pending}
+          className="inline-flex items-center gap-1.5 rounded-md border border-navy/20 bg-white px-3 py-2 text-sm font-semibold text-charcoal transition-colors hover:bg-offwhite disabled:opacity-50"
+          title="Already sent this message off-portal — backdate the log so the next-stage prompt surfaces at the right time"
+        >
+          <CalendarCheck className="h-3.5 w-3.5" />
+          Already sent
+        </button>
         <span className="ml-auto" />
         <button
           onClick={onPark}
@@ -448,6 +516,47 @@ function CardView({
           Mark not interested
         </button>
       </div>
+
+      {showSentPicker && (
+        <div className="flex flex-wrap items-center gap-3 border-t border-navy/10 bg-navy/[0.03] px-5 py-3">
+          <label className="flex items-center gap-2 text-sm font-semibold text-navy">
+            Sent on:
+            <input
+              type="date"
+              value={sentDate}
+              max={isoDateToday()}
+              min={card.trigger.date ?? undefined}
+              onChange={(e) => setSentDate(e.target.value)}
+              className="rounded border border-navy/30 bg-white px-2 py-1 text-sm text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+            />
+          </label>
+          <span className="text-xs text-steel">
+            Logs the {`"${card.rule.name}"`} activity at that date and re-evaluates the cadence — next-stage prompt surfaces immediately if its window has already opened.
+          </span>
+          <span className="ml-auto" />
+          <button
+            type="button"
+            onClick={() => setShowSentPicker(false)}
+            disabled={pending}
+            className="inline-flex items-center rounded-md px-2.5 py-1.5 text-xs font-semibold text-steel hover:text-navy disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!sentDate) return;
+              setShowSentPicker(false);
+              onAlreadySent(sentDate);
+            }}
+            disabled={pending || !sentDate}
+            className="inline-flex items-center gap-1.5 rounded-md bg-navy px-3 py-1.5 text-xs font-bold text-white hover:bg-navy/90 disabled:opacity-50"
+          >
+            <Check className="h-3.5 w-3.5" />
+            Log as sent
+          </button>
+        </div>
+      )}
     </article>
   );
 }
@@ -653,4 +762,27 @@ function formatDateChip(iso?: string): string {
   if (!iso) return "—";
   const date = new Date(iso + "T00:00:00");
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function isoDateToday(): string {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function formatStampForSentAt(sentAtISO: string): string {
+  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(sentAtISO)
+    ? new Date(sentAtISO + "T12:00:00")
+    : new Date(sentAtISO);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const that = new Date(parsed);
+  that.setHours(0, 0, 0, 0);
+  const days = Math.round((today.getTime() - that.getTime()) / 86400000);
+  if (days === 0) return "today";
+  if (days === 1) return "1 day ago";
+  if (days < 14) return `${days} days ago`;
+  return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
