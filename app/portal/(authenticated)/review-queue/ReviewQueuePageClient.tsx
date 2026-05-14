@@ -13,6 +13,7 @@ import {
   PenSquare,
   MoonStar,
   RefreshCw,
+  Pencil,
 } from "lucide-react";
 import type { QueueItem } from "./page";
 
@@ -122,6 +123,8 @@ export default function ReviewQueuePageClient({
 
   const totalRemaining = groups.reduce((n, g) => n + g.items.length, 0);
 
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   async function decide(id: string, action: "approve" | "reject") {
     setError("");
     setBusyId(id);
@@ -146,6 +149,39 @@ export default function ReviewQueuePageClient({
       startTransition(() => router.refresh());
     } catch (e) {
       setError(e instanceof Error ? e.message : `Failed to ${action}`);
+      setBusyId(null);
+    }
+  }
+
+  async function saveEdit(
+    id: string,
+    fields: {
+      first_name?: string;
+      last_name?: string;
+      title?: string;
+      company?: string;
+      summary?: string;
+    },
+  ) {
+    setError("");
+    setBusyId(id);
+    try {
+      const res = await fetch(`/api/review-queue/${id}/update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fields),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data?.error ?? `Failed to save (${res.status})`);
+        setBusyId(null);
+        return;
+      }
+      setEditingId(null);
+      setBusyId(null);
+      startTransition(() => router.refresh());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save");
       setBusyId(null);
     }
   }
@@ -204,8 +240,15 @@ export default function ReviewQueuePageClient({
                     key={it.id}
                     item={it}
                     busy={busyId === it.id}
+                    editing={editingId === it.id}
                     onApprove={() => decide(it.id, "approve")}
                     onReject={() => decide(it.id, "reject")}
+                    onEditOpen={() => {
+                      setError("");
+                      setEditingId(it.id);
+                    }}
+                    onEditCancel={() => setEditingId(null)}
+                    onEditSave={(fields) => saveEdit(it.id, fields)}
                   />
                 ))}
               </ul>
@@ -220,13 +263,27 @@ export default function ReviewQueuePageClient({
 function ReviewRow({
   item,
   busy,
+  editing,
   onApprove,
   onReject,
+  onEditOpen,
+  onEditCancel,
+  onEditSave,
 }: {
   item: QueueItem;
   busy: boolean;
+  editing: boolean;
   onApprove: () => void;
   onReject: () => void;
+  onEditOpen: () => void;
+  onEditCancel: () => void;
+  onEditSave: (fields: {
+    first_name?: string;
+    last_name?: string;
+    title?: string;
+    company?: string;
+    summary?: string;
+  }) => void;
 }) {
   const reconciliation = isReconciliation(item);
   const sourceLabel = SOURCE_LABELS[item.source] ?? item.source;
@@ -259,6 +316,15 @@ function ReviewRow({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button
+            onClick={onEditOpen}
+            disabled={busy || editing}
+            className="inline-flex items-center gap-1 rounded-md border border-navy/20 bg-white px-3 py-1.5 text-xs font-semibold text-navy hover:bg-navy/5 disabled:opacity-50"
+            title="Edit before approving"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Edit
+          </button>
+          <button
             onClick={onReject}
             disabled={busy}
             className="inline-flex items-center gap-1 rounded-md border border-navy/20 bg-white px-3 py-1.5 text-xs font-semibold text-steel hover:border-red hover:bg-red/5 hover:text-red disabled:opacity-50"
@@ -276,8 +342,174 @@ function ReviewRow({
           </button>
         </div>
       </div>
+      {editing && (
+        <EditPanel
+          item={item}
+          busy={busy}
+          onCancel={onEditCancel}
+          onSave={onEditSave}
+        />
+      )}
     </li>
   );
+}
+
+function EditPanel({
+  item,
+  busy,
+  onCancel,
+  onSave,
+}: {
+  item: QueueItem;
+  busy: boolean;
+  onCancel: () => void;
+  onSave: (fields: {
+    first_name?: string;
+    last_name?: string;
+    title?: string;
+    company?: string;
+    summary?: string;
+  }) => void;
+}) {
+  // Seed initial values from the existing payload so Sean can correct
+  // a bad parse rather than re-typing from scratch.
+  const initialName = asStr(item.payload.name) ?? "";
+  const split = splitNameLocal(initialName);
+  const [firstName, setFirstName] = useState(
+    asStr(item.payload.first_name) ?? split.first,
+  );
+  const [lastName, setLastName] = useState(
+    asStr(item.payload.last_name) ?? split.last,
+  );
+  const [title, setTitle] = useState(asStr(item.payload.title) ?? "");
+  const [company, setCompany] = useState(
+    item.lead?.company?.name ?? asStr(item.payload.company) ?? "",
+  );
+  const [summary, setSummary] = useState(asStr(item.payload.summary) ?? "");
+
+  const url = asStr(item.payload.linkedin_url);
+  // Heads-up that approve will create a new lead if Sean is editing
+  // an Unknown-lead stage_change. Helps him understand the side effect.
+  const willCreateNewLead =
+    item.kind === "stage_change" &&
+    !item.lead_id &&
+    !!(firstName || lastName);
+
+  return (
+    <div className="mt-3 rounded-md border border-navy/15 bg-offwhite/60 p-3">
+      <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-steel">
+        Edit before approving
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-steel">
+            First name
+          </span>
+          <input
+            type="text"
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
+            placeholder={url ? "Look at LinkedIn ↗" : ""}
+            className="w-full rounded border border-navy/20 bg-white px-2 py-1.5 text-sm text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-steel">
+            Last name
+          </span>
+          <input
+            type="text"
+            value={lastName}
+            onChange={(e) => setLastName(e.target.value)}
+            className="w-full rounded border border-navy/20 bg-white px-2 py-1.5 text-sm text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-steel">
+            Title
+          </span>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. Director of Maintenance"
+            className="w-full rounded border border-navy/20 bg-white px-2 py-1.5 text-sm text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-steel">
+            Company
+          </span>
+          <input
+            type="text"
+            value={company}
+            onChange={(e) => setCompany(e.target.value)}
+            placeholder="e.g. Boeing"
+            className="w-full rounded border border-navy/20 bg-white px-2 py-1.5 text-sm text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+          />
+        </label>
+        {item.kind === "new_activity" && (
+          <label className="block sm:col-span-2">
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-steel">
+              Summary
+            </span>
+            <input
+              type="text"
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+              className="w-full rounded border border-navy/20 bg-white px-2 py-1.5 text-sm text-charcoal focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+            />
+          </label>
+        )}
+      </div>
+      {willCreateNewLead && (
+        <p className="mt-2 rounded bg-navy/5 px-2 py-1.5 text-[11px] text-navy">
+          Saving will convert this row to a new-lead proposal (since no
+          existing lead matched). On Approve, a new lead will be created at
+          status <span className="font-semibold">
+            {asStr(item.payload.to_status) ?? "contacted"}
+          </span>.
+        </p>
+      )}
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={busy}
+          className="inline-flex items-center gap-1 rounded-md border border-navy/20 bg-white px-3 py-1.5 text-xs font-semibold text-steel hover:bg-offwhite disabled:opacity-50"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            onSave({
+              first_name: firstName.trim() || undefined,
+              last_name: lastName.trim() || undefined,
+              title: title.trim() || undefined,
+              company: company.trim() || undefined,
+              summary: summary.trim() || undefined,
+            })
+          }
+          disabled={busy}
+          className="inline-flex items-center gap-1 rounded-md bg-navy px-3 py-1.5 text-xs font-bold text-white hover:bg-navy/90 disabled:opacity-50"
+        >
+          Save changes
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function splitNameLocal(full: string): { first: string; last: string } {
+  const trimmed = full.trim();
+  if (!trimmed) return { first: "", last: "" };
+  const idx = trimmed.lastIndexOf(" ");
+  if (idx <= 0) return { first: trimmed, last: "" };
+  return {
+    first: trimmed.slice(0, idx).trim(),
+    last: trimmed.slice(idx + 1).trim(),
+  };
 }
 
 function RowSummary({ item }: { item: QueueItem }) {

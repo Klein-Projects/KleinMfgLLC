@@ -67,7 +67,8 @@ export default async function PortalDashboard() {
   const threeDaysOut = new Date(Date.now() + 3 * 86400000)
     .toISOString()
     .split("T")[0];
-  const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString();
+  const currentYear = new Date().getFullYear();
+  const yearStart = new Date(currentYear, 0, 1).toISOString();
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
 
   // Fetch all data in parallel
@@ -79,7 +80,8 @@ export default async function PortalDashboard() {
     followUpListRes,
     recentActivityRes,
     paidOrdersYtdRes,
-    sampleOrdersYtdRes,
+    manualOrdersYtdRes,
+    samplesShippedYtdRes,
     wonLeadsRes,
   ] = await Promise.all([
     // Active leads count — excludes terminal statuses AND parked leads.
@@ -98,21 +100,24 @@ export default async function PortalDashboard() {
       .not("status", "in", "(won,lost)")
       .or(`wake_up_at.is.null,wake_up_at.lt.${nowISO}`),
 
-    // Samples sent (30 days) — count of sample_sent activity rows.
+    // Samples sent (30 days) — Phase 4 reads from shipments, not
+    // activities, so the count and the /portal/shipments?since=30d
+    // detail page agree (every CRM-side shipment is a sample, see
+    // migration 018 backfill).
     supabase
-      .from("activities")
+      .from("shipments")
       .select("id", { count: "exact", head: true })
-      .eq("type", "sample_sent")
-      .gte("created_at", thirtyDaysAgo),
+      .gte("shipped_at", thirtyDaysAgo),
 
-    // Wins this year — leads currently marked won whose last_activity_at
-    // is within this calendar year (best available proxy for "won this
-    // year" without a dedicated won_at column).
+    // Wins this year — Phase 4 filters by closed_won_at, the new
+    // dedicated stamp column. Replaces the last_activity_at proxy
+    // that incorrectly bumped 2024 wins into 2025 whenever Sean
+    // logged a follow-up note on a won lead.
     supabase
       .from("leads")
       .select("id", { count: "exact", head: true })
       .eq("status", "won")
-      .gte("last_activity_at", yearStart),
+      .gte("closed_won_at", yearStart),
 
     // Follow-up list — overdue + next 3 days, parked leads excluded.
     supabase
@@ -135,31 +140,40 @@ export default async function PortalDashboard() {
       .order("created_at", { ascending: false })
       .limit(10),
 
-    // YTD revenue + parts shipped — paid (non-sample) orders only.
+    // YTD revenue (web side) — paid (non-sample) Stripe orders.
     supabase
       .from("orders")
       .select("total_charged, product_6in_qty, product_11in_qty, shipped_at")
       .eq("is_sample", false)
       .gte("created_at", yearStart),
 
-    // YTD free samples shipped — sample orders shipped this year.
+    // YTD revenue (offline side) — manual_orders entered through
+    // /portal/analytics/revenue/<year>. Empty until Step 4 ships
+    // the Add Manual Order form, but the union is wired now so
+    // numbers stay correct as soon as the first row lands.
     supabase
-      .from("orders")
+      .from("manual_orders")
+      .select("total_revenue, parts, order_date")
+      .gte("order_date", yearStart.split("T")[0]),
+
+    // YTD free samples shipped — Phase 4 reads from shipments
+    // where is_sample=true (migration 018 backfilled this).
+    supabase
+      .from("shipments")
       .select("id", { count: "exact", head: true })
       .eq("is_sample", true)
-      .eq("shipping_status", "shipped")
       .gte("shipped_at", yearStart),
 
-    // Won deals this year — list with contact + company + recency, used
-    // for the "This Year" panel's drill-down view.
+    // Won deals this year — Phase 4 filters and orders by
+    // closed_won_at to match the Wins-This-Year tile above.
     supabase
       .from("leads")
       .select(
-        "id, last_activity_at, contact:contacts(first_name, last_name), company:companies(name)"
+        "id, closed_won_at, contact:contacts(first_name, last_name), company:companies(name)"
       )
       .eq("status", "won")
-      .gte("last_activity_at", yearStart)
-      .order("last_activity_at", { ascending: false })
+      .gte("closed_won_at", yearStart)
+      .order("closed_won_at", { ascending: false })
       .limit(20),
   ]);
 
@@ -178,22 +192,54 @@ export default async function PortalDashboard() {
     product_11in_qty: number;
     shipped_at: string | null;
   }>;
-  const revenueYtd = paidOrders.reduce(
+  const manualOrders = (manualOrdersYtdRes.data ?? []) as Array<{
+    total_revenue: number;
+    parts: Array<{ size?: string; qty?: number; unit_price?: number }> | null;
+    order_date: string;
+  }>;
+
+  const revenueWeb = paidOrders.reduce(
     (s, o) => s + Number(o.total_charged ?? 0),
     0,
   );
-  const partsSoldYtd = paidOrders.reduce(
+  const revenueManual = manualOrders.reduce(
+    (s, o) => s + Number(o.total_revenue ?? 0),
+    0,
+  );
+  const revenueYtd = revenueWeb + revenueManual;
+
+  const partsSoldWeb = paidOrders.reduce(
     (s, o) => s + (o.product_6in_qty ?? 0) + (o.product_11in_qty ?? 0),
     0,
   );
+  const partsSoldManual = manualOrders.reduce(
+    (s, o) =>
+      s + (Array.isArray(o.parts) ? o.parts : []).reduce(
+        (ss, p) => ss + (Number(p?.qty) || 0),
+        0,
+      ),
+    0,
+  );
+  const partsSoldYtd = partsSoldWeb + partsSoldManual;
+
   const ordersShippedYtd = paidOrders.filter((o) => !!o.shipped_at).length;
-  const samplesShippedYtd = sampleOrdersYtdRes.count ?? 0;
+  const samplesShippedYtd = samplesShippedYtdRes.count ?? 0;
   const wonDeals = (wonLeadsRes.data ?? []) as unknown as Array<{
     id: string;
-    last_activity_at: string;
+    closed_won_at: string;
     contact: { first_name: string; last_name: string } | null;
     company: { name: string } | null;
   }>;
+
+  const dataAsOf = new Date().toLocaleString("en-US", {
+    timeZone: "America/Los_Angeles",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
 
   const statCards = [
     {
@@ -201,7 +247,11 @@ export default async function PortalDashboard() {
       value: activeLeads,
       icon: Users,
       alert: false,
-      href: "/portal/leads",
+      href:
+        "/portal/leads?status_in=new,invited,contacted,engaged,sample_sent,quoted,nurture",
+      tipSource: "leads",
+      tipBody:
+        "Count of leads where status NOT IN ('won','lost') AND (wake_up_at IS NULL OR wake_up_at ≤ now()).",
     },
     {
       label: "Follow-Ups Due",
@@ -209,20 +259,28 @@ export default async function PortalDashboard() {
       icon: Bell,
       alert: followUpsDue > 0,
       href: "/portal/today",
+      tipSource: "today queue",
+      tipBody:
+        "Leads surfaced by the cadence engine for today, plus any with manual follow_up_date ≤ today and status NOT IN ('won','lost'). Parked leads excluded.",
     },
     {
       label: "Samples Sent (30d)",
       value: samplesSent,
       icon: Send,
       alert: false,
-      href: "/portal/shipments?tab=samples",
+      href: "/portal/shipments?since=30d",
+      tipSource: "shipments",
+      tipBody:
+        "COUNT(*) of shipments where shipped_at ≥ now() − 30 days.",
     },
     {
       label: "Wins This Year",
       value: winsThisYear,
       icon: Trophy,
       alert: false,
-      href: "/portal/leads?status=won&park=all",
+      href: `/portal/leads?status=won&won_year=${currentYear}`,
+      tipSource: "leads",
+      tipBody: `Leads where status='won' AND year(closed_won_at) = ${currentYear}.`,
     },
   ];
 
@@ -231,13 +289,13 @@ export default async function PortalDashboard() {
       {/* Page title */}
       <h1 className="text-2xl font-bold text-navy">Dashboard</h1>
 
-      {/* ── STAT CARDS (now click-throughs) ── */}
+      {/* ── STAT CARDS (clickable + hover tooltip describing source) ── */}
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {statCards.map((card) => (
           <Link
             key={card.label}
             href={card.href}
-            className="group rounded-lg border border-navy/10 bg-white p-5 shadow-sm transition-all hover:border-navy/40 hover:shadow"
+            className="group relative rounded-lg border border-navy/10 bg-white p-5 shadow-sm transition-all hover:border-navy/40 hover:shadow"
           >
             <div className="flex items-center justify-between">
               <card.icon className="h-5 w-5 text-steel" strokeWidth={1.5} />
@@ -252,6 +310,7 @@ export default async function PortalDashboard() {
               {card.label}
               <ArrowRight className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />
             </p>
+            <SourceTooltip source={card.tipSource} body={card.tipBody} />
           </Link>
         ))}
       </div>
@@ -269,28 +328,40 @@ export default async function PortalDashboard() {
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <KpiTile
+              href={`/portal/analytics/revenue/${currentYear}`}
               label="Revenue"
               value={formatUSD(revenueYtd)}
-              hint={`${ordersShippedYtd} of ${paidOrders.length} order${paidOrders.length === 1 ? "" : "s"} shipped`}
+              hint={`${ordersShippedYtd} of ${paidOrders.length} web order${paidOrders.length === 1 ? "" : "s"} shipped · ${manualOrders.length} manual`}
+              tipSource="orders + manual_orders"
+              tipBody={`SUM(orders.total_charged) where is_sample=false + SUM(manual_orders.total_revenue) for ${currentYear}.`}
             />
             <KpiTile
+              href={`/portal/analytics/parts-sold/${currentYear}`}
               label="Parts sold"
               value={partsSoldYtd.toLocaleString()}
-              hint="6in + 11in scrapers (paid)"
+              hint="6in + 11in across web + manual"
+              tipSource="orders + manual_orders"
+              tipBody={`SUM(orders.product_6in_qty + product_11in_qty) where is_sample=false + SUM of parts[].qty across manual_orders for ${currentYear}.`}
             />
             <KpiTile
+              href={`/portal/analytics/samples/${currentYear}`}
               label="Free samples shipped"
               value={samplesShippedYtd.toLocaleString()}
-              hint={`Drives the ${samplesSent} you sent in the last 30d`}
+              hint={`This year · ${samplesSent} sent in last 30d`}
+              tipSource="shipments"
+              tipBody={`COUNT(*) of shipments where is_sample=true AND year(shipped_at) = ${currentYear}. Backfilled true on existing rows in migration 018.`}
             />
             <KpiTile
+              href={`/portal/analytics/won/${currentYear}`}
               label="Won deals"
               value={winsThisYear.toLocaleString()}
               hint={
                 wonDeals.length > 0
-                  ? `Most recent · ${relativeDate(wonDeals[0].last_activity_at)}`
+                  ? `Most recent · ${relativeDate(wonDeals[0].closed_won_at)}`
                   : "No wins logged yet"
               }
+              tipSource="leads"
+              tipBody={`Leads where status='won' AND year(closed_won_at) = ${currentYear}. Deal value joined from linked manual_orders/orders rows.`}
             />
           </div>
 
@@ -329,7 +400,7 @@ export default async function PortalDashboard() {
                           )}
                         </div>
                         <span className="whitespace-nowrap text-xs text-steel">
-                          {relativeDate(d.last_activity_at)}
+                          {relativeDate(d.closed_won_at)}
                         </span>
                       </Link>
                     </li>
@@ -359,6 +430,13 @@ export default async function PortalDashboard() {
           <FollowUpPanel leads={followUpList} />
         </section>
       </div>
+
+      {/* ── DATA-AS-OF FOOTER (Phase 4 Step 6 lights this up further) ── */}
+      <p className="mt-6 flex items-center gap-2 text-xs text-steel">
+        <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-600" />
+        Data as of {dataAsOf} PT · hover any tile for the source query, click
+        to see the records.
+      </p>
 
       {/* ── RECENT ACTIVITY ── */}
       <div className="mt-8 rounded-lg border border-navy/10 bg-white p-6 shadow-sm">
@@ -434,21 +512,67 @@ export default async function PortalDashboard() {
 }
 
 function KpiTile({
+  href,
   label,
   value,
   hint,
+  tipSource,
+  tipBody,
 }: {
+  href?: string;
   label: string;
   value: string;
   hint: string;
+  tipSource: string;
+  tipBody: string;
 }) {
-  return (
-    <div className="rounded-md border border-navy/10 bg-offwhite/30 px-4 py-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-steel">
+  const inner = (
+    <>
+      <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-steel">
         {label}
+        {href && (
+          <span className="text-[10px] font-bold uppercase tracking-wider text-red opacity-0 transition-opacity group-hover:opacity-100">
+            Edit ↗
+          </span>
+        )}
       </p>
       <p className="mt-1 text-2xl font-bold tabular-nums text-navy">{value}</p>
       <p className="mt-0.5 text-[11px] text-steel">{hint}</p>
+      <SourceTooltip source={tipSource} body={tipBody} />
+    </>
+  );
+
+  const className =
+    "group relative block rounded-md border border-navy/10 bg-offwhite/30 px-4 py-3 transition-colors hover:border-navy/30 hover:bg-white";
+
+  if (href) {
+    return (
+      <Link href={href} className={className}>
+        {inner}
+      </Link>
+    );
+  }
+  return (
+    <div className={className} tabIndex={0}>
+      {inner}
+    </div>
+  );
+}
+
+function SourceTooltip({ source, body }: { source: string; body: string }) {
+  return (
+    <div
+      role="tooltip"
+      className="pointer-events-none absolute bottom-[calc(100%+8px)] left-0 right-0 z-10 rounded-md bg-navy px-3 py-2 text-left text-[11px] leading-snug text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+    >
+      <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-white/60">
+        Source · {source}
+      </span>
+      {body}
+      <span
+        aria-hidden
+        className="absolute left-6 top-full block h-0 w-0 border-x-[6px] border-t-[6px] border-x-transparent border-t-navy"
+      />
     </div>
   );
 }

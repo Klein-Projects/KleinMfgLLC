@@ -177,6 +177,18 @@ export default function LeadDetailClient({
   function handleStatusChange(newStatus: string) {
     startTransition(async () => {
       await updateLeadField(lead.id, "status", newStatus);
+      // Phase 4: stamp closed_won_at on the won transition so the
+      // dashboard "Wins This Year" tile and /portal/analytics/won/<year>
+      // can filter by year correctly. Re-stamp on every won flip — the
+      // most recent win is what we care about; non-won leads keep
+      // whatever value they had (the partial index ignores them).
+      if (newStatus === "won") {
+        await updateLeadField(
+          lead.id,
+          "closed_won_at",
+          new Date().toISOString(),
+        );
+      }
       router.refresh();
     });
   }

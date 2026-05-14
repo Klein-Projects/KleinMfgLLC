@@ -9,6 +9,7 @@ import { Plus, Search, Moon, Infinity as InfinityIcon } from "lucide-react";
 const STATUS_OPTIONS = [
   "all",
   "new",
+  "invited",
   "contacted",
   "engaged",
   "sample_sent",
@@ -22,6 +23,7 @@ const SOURCE_OPTIONS = ["all", "linkedin", "website", "referral", "other"] as co
 
 const statusColors: Record<string, string> = {
   new: "bg-gray-100 text-gray-800",
+  invited: "bg-indigo-100 text-indigo-800",
   contacted: "bg-blue-100 text-blue-800",
   engaged: "bg-teal-100 text-teal-800",
   sample_sent: "bg-orange-100 text-orange-800",
@@ -33,6 +35,7 @@ const statusColors: Record<string, string> = {
 
 const statusLabels: Record<string, string> = {
   new: "New",
+  invited: "Invited",
   contacted: "Contacted",
   engaged: "Engaged",
   sample_sent: "Sample Sent",
@@ -48,6 +51,7 @@ interface LeadRow {
   source: string;
   follow_up_date: string | null;
   last_activity_at: string;
+  closed_won_at: string | null;
   wake_up_at: string | null;
   wake_up_reason: string | null;
   contact: { first_name: string; last_name: string } | null;
@@ -78,6 +82,25 @@ export default function LeadsListPage() {
   const searchParams = useSearchParams();
   const initialStatus = searchParams.get("status") ?? "all";
 
+  // Phase 4 dashboard click-throughs pass status_in (a comma-separated
+  // list, used by Active Leads → all non-terminal stages) and won_year
+  // (used by Wins This Year → won leads in <year>). Both are read-only
+  // from URL — switching the dropdown clears the multi-status filter
+  // by setting it to an empty array.
+  const initialStatusIn = (searchParams.get("status_in") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const initialWonYearRaw = searchParams.get("won_year");
+  const initialWonYear =
+    initialWonYearRaw && /^\d{4}$/.test(initialWonYearRaw)
+      ? Number(initialWonYearRaw)
+      : null;
+
+  // The dashboard counts all exclude parked leads, so dashboard
+  // click-throughs default to "active_only" too — that way the count
+  // and the list always match. Sean can flip the dropdown to "All
+  // leads" to see parked rows that share the filter.
   const initialParkFilter = (searchParams.get("park") ?? "active_only") as ParkFilter;
 
   const [leads, setLeads] = useState<LeadRow[]>([]);
@@ -87,6 +110,10 @@ export default function LeadsListPage() {
   const [parkFilter, setParkFilter] = useState<ParkFilter>(initialParkFilter);
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [search, setSearch] = useState("");
+  // status_in / won_year are filter-only (no UI control yet) — they
+  // ride along until the user touches another filter.
+  const [statusIn] = useState<string[]>(initialStatusIn);
+  const [wonYear] = useState<number | null>(initialWonYear);
 
   useEffect(() => {
     async function fetchLeads() {
@@ -94,7 +121,7 @@ export default function LeadsListPage() {
       const { data } = await supabase
         .from("leads")
         .select(
-          "id, status, source, follow_up_date, last_activity_at, wake_up_at, wake_up_reason, contact:contacts(first_name, last_name), company:companies(name)"
+          "id, status, source, follow_up_date, last_activity_at, closed_won_at, wake_up_at, wake_up_reason, contact:contacts(first_name, last_name), company:companies(name)"
         )
         .order("last_activity_at", { ascending: false });
       setLeads((data as any[]) ?? []);
@@ -108,6 +135,13 @@ export default function LeadsListPage() {
   const filtered = useMemo(() => {
     return leads.filter((lead) => {
       if (statusFilter !== "all" && lead.status !== statusFilter) return false;
+      if (statusIn.length > 0 && !statusIn.includes(lead.status)) return false;
+      if (wonYear !== null) {
+        if (lead.status !== "won") return false;
+        if (!lead.closed_won_at) return false;
+        if (new Date(lead.closed_won_at).getUTCFullYear() !== wonYear)
+          return false;
+      }
       if (sourceFilter !== "all" && lead.source !== sourceFilter) return false;
 
       const parkedNow = isLeadParkedNow(lead);
@@ -129,7 +163,7 @@ export default function LeadsListPage() {
       }
       return true;
     });
-  }, [leads, statusFilter, sourceFilter, parkFilter, overdueOnly, search, todayISO]);
+  }, [leads, statusFilter, statusIn, wonYear, sourceFilter, parkFilter, overdueOnly, search, todayISO]);
 
   function formatDate(dateStr: string | null): string {
     if (!dateStr) return "—";
@@ -165,6 +199,33 @@ export default function LeadsListPage() {
           Add Lead
         </Link>
       </div>
+
+      {/* URL-params filter banner (shown when Phase 4 dashboard tile sent us here) */}
+      {(statusIn.length > 0 || wonYear !== null) && (
+        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-md border border-navy/20 bg-offwhite px-3 py-2 text-xs text-charcoal">
+          <span className="font-semibold text-navy">From dashboard:</span>
+          {statusIn.length > 0 && (
+            <span>
+              filtered to{" "}
+              <span className="font-semibold">
+                {statusIn.map((s) => statusLabels[s] ?? s).join(", ")}
+              </span>
+            </span>
+          )}
+          {wonYear !== null && (
+            <span>
+              wins in <span className="font-semibold">{wonYear}</span>
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => router.replace("/portal/leads")}
+            className="ml-auto text-red underline-offset-2 hover:underline"
+          >
+            Clear filter
+          </button>
+        </div>
+      )}
 
       {/* Filter Bar */}
       <div className="mt-6 flex flex-wrap items-center gap-3">

@@ -1,0 +1,937 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Klein Portal — Dashboard Drill-Through (Phase 4 mockup)</title>
+<style>
+  :root {
+    --navy:     #1C2E4A;
+    --red:      #A52A2A;
+    --charcoal: #2E2E2E;
+    --steel:    #7A7A7A;
+    --offwhite: #F4F4F2;
+    --border:   rgba(28, 46, 74, 0.10);
+    --border-strong: rgba(28, 46, 74, 0.20);
+    --shadow-sm: 0 1px 2px rgba(28, 46, 74, 0.06);
+    --shadow-md: 0 4px 12px rgba(28, 46, 74, 0.10);
+    --green:    #16A34A;
+    --amber:    #B45309;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--charcoal);
+    background: var(--offwhite);
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; text-decoration: none; }
+  button { font-family: inherit; cursor: pointer; }
+
+  /* ── Mockup banner ── */
+  .mockup-banner {
+    background: var(--navy); color: #fff;
+    padding: 10px 24px; font-size: 13px;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px;
+  }
+  .mockup-banner b { color: #fff; }
+  .mockup-banner .pill {
+    display: inline-block;
+    padding: 2px 8px; border-radius: 999px;
+    background: rgba(255,255,255,0.15);
+    font-size: 11px; font-weight: 600;
+    margin-right: 6px;
+  }
+  .mockup-banner .links { display: flex; gap: 16px; }
+  .mockup-banner .links a {
+    color: rgba(255,255,255,0.85);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    font-weight: 500;
+  }
+  .mockup-banner .links a:hover { color: #fff; }
+
+  /* ── Layout ── */
+  .layout { display: flex; min-height: 100vh; }
+  .sidebar {
+    position: sticky; top: 0;
+    width: 240px; height: 100vh;
+    background: var(--navy); color: #fff;
+    display: flex; flex-direction: column;
+    flex-shrink: 0;
+  }
+  .main { flex: 1; min-width: 0; }
+
+  /* ── Sidebar (visual only) ── */
+  .brand {
+    display: flex; align-items: center; gap: 12px;
+    padding: 18px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+  }
+  .brand-mark {
+    width: 40px; height: 40px;
+    border-radius: 6px; background: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; color: var(--navy); font-size: 15px;
+  }
+  .brand-name { font-weight: 700; font-size: 15px; }
+  .brand-sub  { font-size: 11px; opacity: 0.6; }
+  .nav { flex: 1; padding: 14px 12px; }
+  .nav ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 2px; }
+  .nav a {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px; border-radius: 6px;
+    color: rgba(255, 255, 255, 0.70);
+    font-size: 13px; font-weight: 500;
+  }
+  .nav a:hover { background: rgba(255, 255, 255, 0.05); color: #fff; }
+  .nav a.active {
+    background: rgba(255, 255, 255, 0.10);
+    color: #fff;
+    border-left: 2px solid var(--red);
+    padding-left: 10px;
+  }
+  .nav-icon { width: 14px; }
+
+  /* ── Page chrome ── */
+  .page { padding: 32px; max-width: 1200px; }
+  .page-title { font-size: 24px; font-weight: 700; color: var(--navy); margin: 0 0 4px; }
+  .page-section-label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--steel);
+    margin: 32px 0 10px;
+  }
+
+  /* ── KPI cards (top row) — clickable + tooltip ── */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+    margin-top: 18px;
+  }
+  .kpi-card {
+    position: relative;
+    display: block;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 18px 16px;
+    box-shadow: var(--shadow-sm);
+    transition: border-color 120ms, box-shadow 120ms, transform 120ms;
+    cursor: pointer;
+    color: inherit;
+  }
+  .kpi-card:hover {
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+  }
+  .kpi-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .kpi-icon {
+    width: 18px; height: 18px;
+    color: var(--steel);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+  .kpi-badge {
+    background: var(--red); color: #fff;
+    padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 700;
+    line-height: 1.4;
+  }
+  .kpi-value {
+    font-size: 28px; font-weight: 700; color: var(--navy);
+    margin: 4px 0 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .kpi-label {
+    font-size: 13px; color: rgba(46,46,46,0.65);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .kpi-card .arrow {
+    opacity: 0; transition: opacity 120ms;
+    color: var(--steel); font-size: 12px;
+  }
+  .kpi-card:hover .arrow { opacity: 1; }
+  .kpi-card .clickhint {
+    position: absolute; top: 8px; right: 10px;
+    font-size: 10px; font-weight: 700;
+    color: var(--steel);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    opacity: 0; transition: opacity 120ms;
+  }
+  .kpi-card:hover .clickhint { opacity: 0.55; }
+
+  /* ── Tooltips ── */
+  .tip {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0; right: 0;
+    background: var(--navy);
+    color: #fff;
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: 12px; line-height: 1.45;
+    font-weight: 400;
+    box-shadow: 0 6px 18px rgba(28,46,74,0.25);
+    opacity: 0; pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity 140ms, transform 140ms;
+    z-index: 5;
+  }
+  .tip::after {
+    content: "";
+    position: absolute;
+    top: 100%; left: 24px;
+    border: 6px solid transparent;
+    border-top-color: var(--navy);
+  }
+  .tip code {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px;
+    background: rgba(255,255,255,0.10);
+    padding: 1px 5px; border-radius: 3px;
+  }
+  .tip-source {
+    display: inline-block;
+    margin-bottom: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: rgba(255,255,255,0.6);
+  }
+  .has-tip:hover .tip,
+  .has-tip:focus-within .tip {
+    opacity: 1; pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  /* ── Middle row ── */
+  .middle-row {
+    display: grid;
+    grid-template-columns: 3fr 2fr;
+    gap: 24px;
+    margin-top: 32px;
+  }
+  .panel {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 22px;
+    box-shadow: var(--shadow-sm);
+  }
+  .panel-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .panel-title { font-size: 17px; font-weight: 600; color: var(--navy); margin: 0; }
+  .panel-meta { font-size: 11px; color: var(--steel); }
+
+  /* ── This Year tiles — clickable + tooltip ── */
+  .ty-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0,1fr));
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .ty-tile {
+    position: relative;
+    display: block;
+    background: rgba(244,244,242,0.55);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px 10px;
+    cursor: pointer;
+    transition: border-color 120ms, background 120ms;
+    color: inherit;
+  }
+  .ty-tile:hover {
+    border-color: var(--border-strong);
+    background: #fff;
+  }
+  .ty-label {
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--steel);
+  }
+  .ty-value {
+    font-size: 22px; font-weight: 700; color: var(--navy);
+    margin-top: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .ty-hint { font-size: 11px; color: var(--steel); margin-top: 1px; }
+  .ty-edit-tag {
+    position: absolute;
+    top: 8px; right: 10px;
+    font-size: 9px; font-weight: 700;
+    color: var(--red);
+    background: rgba(165,42,42,0.10);
+    padding: 2px 6px; border-radius: 3px;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    line-height: 1.4;
+    opacity: 0; transition: opacity 120ms;
+  }
+  .ty-tile:hover .ty-edit-tag { opacity: 1; }
+
+  /* ── Won-deals list ── */
+  .won-list-wrap {
+    margin-top: 18px; padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+  .won-list-head {
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--steel);
+  }
+  .won-list { list-style: none; margin: 10px 0 0; padding: 0; }
+  .won-list li {
+    border-top: 1px solid var(--border);
+    padding: 8px 0;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; font-size: 13px;
+  }
+  .won-list li:first-child { border-top: 0; }
+  .won-list .name { font-weight: 600; color: var(--navy); }
+  .won-list .co { font-size: 11px; color: var(--steel); }
+  .won-list .when { font-size: 11px; color: var(--steel); white-space: nowrap; }
+
+  /* ── Footer ── */
+  .data-footer {
+    margin-top: 24px;
+    font-size: 11px; color: var(--steel);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .data-footer .dot {
+    width: 6px; height: 6px; border-radius: 999px;
+    background: var(--green); display: inline-block;
+  }
+
+  /* ── Wireframe — revenue detail page ── */
+  .wireframe-section {
+    margin-top: 60px;
+    padding: 24px;
+    background: #fff;
+    border: 1px dashed var(--border-strong);
+    border-radius: 12px;
+  }
+  .wireframe-label {
+    display: inline-block;
+    background: var(--red); color: #fff;
+    padding: 4px 10px; border-radius: 4px;
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    margin-bottom: 12px;
+  }
+  .breadcrumb {
+    font-size: 12px; color: var(--steel);
+    margin-bottom: 6px;
+  }
+  .breadcrumb a { color: var(--steel); text-decoration: underline; text-underline-offset: 2px; }
+  .breadcrumb a:hover { color: var(--navy); }
+
+  .summary-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+    margin: 18px 0 24px;
+  }
+  .summary-card {
+    background: var(--offwhite);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+  }
+  .summary-card .lbl {
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--steel);
+  }
+  .summary-card .val {
+    font-size: 22px; font-weight: 700; color: var(--navy);
+    margin-top: 2px; font-variant-numeric: tabular-nums;
+  }
+  .summary-card.total { background: var(--navy); border-color: var(--navy); }
+  .summary-card.total .lbl { color: rgba(255,255,255,0.65); }
+  .summary-card.total .val { color: #fff; }
+
+  /* ── Revenue table ── */
+  .table-toolbar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .table-toolbar h3 { margin: 0; font-size: 14px; color: var(--navy); }
+  .add-btn {
+    background: var(--red);
+    color: #fff;
+    border: 0;
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .add-btn:hover { background: #8e2424; }
+
+  .data-table {
+    width: 100%; border-collapse: collapse;
+    background: #fff;
+    border: 1px solid var(--border); border-radius: 6px;
+    font-size: 13px;
+    overflow: hidden;
+  }
+  .data-table thead {
+    background: var(--offwhite);
+    text-align: left;
+  }
+  .data-table th {
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--steel);
+    padding: 10px 12px;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .data-table th:hover { color: var(--navy); }
+  .data-table th .sort { color: rgba(122,122,122,0.5); margin-left: 4px; font-size: 10px; }
+  .data-table tbody td {
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+  }
+  .data-table tbody tr:hover { background: rgba(244,244,242,0.5); }
+  .src-tag {
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 2px 6px; border-radius: 3px;
+  }
+  .src-tag.web    { background: #DBEAFE; color: #1E40AF; }
+  .src-tag.manual { background: #FEF3C7; color: var(--amber); }
+  .num { font-variant-numeric: tabular-nums; text-align: right; }
+
+  .row-actions {
+    display: inline-flex; gap: 8px;
+  }
+  .row-actions button {
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    color: var(--navy);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px; font-weight: 600;
+  }
+  .row-actions button:hover { background: var(--offwhite); }
+
+  /* ── Add Manual Order form ── */
+  .add-form {
+    margin-top: 24px;
+    padding: 20px;
+    background: var(--offwhite);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .add-form h4 { margin: 0 0 12px; font-size: 14px; color: var(--navy); }
+  .field-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0,1fr));
+    gap: 12px;
+  }
+  .field-grid .full { grid-column: 1 / -1; }
+  .field label {
+    display: block;
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--steel);
+    margin-bottom: 4px;
+  }
+  .field input, .field select, .field textarea {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    font-size: 13px;
+    background: #fff;
+    font-family: inherit;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus {
+    outline: none;
+    border-color: var(--navy);
+    box-shadow: 0 0 0 2px rgba(28,46,74,0.15);
+  }
+  .parts-row {
+    display: grid;
+    grid-template-columns: 100px 80px 120px auto;
+    gap: 10px;
+    align-items: end;
+    padding: 10px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    margin-top: 6px;
+  }
+  .parts-row + .parts-row { margin-top: 6px; }
+  .add-part-link {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 12px; color: var(--red);
+    text-decoration: underline; text-underline-offset: 2px;
+    font-weight: 600;
+  }
+  .form-actions {
+    margin-top: 18px;
+    display: flex; gap: 10px; justify-content: flex-end;
+  }
+  .btn-primary {
+    background: var(--navy); color: #fff;
+    border: 0; padding: 9px 18px;
+    border-radius: 6px;
+    font-size: 13px; font-weight: 600;
+  }
+  .btn-primary:hover { background: #14233a; }
+  .btn-secondary {
+    background: #fff; color: var(--navy);
+    border: 1px solid var(--border-strong);
+    padding: 9px 18px;
+    border-radius: 6px;
+    font-size: 13px; font-weight: 600;
+  }
+
+  /* ── Notes section ── */
+  .design-notes {
+    margin-top: 32px;
+    padding: 20px 22px;
+    background: #FFFBEB;
+    border: 1px solid #FDE68A;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .design-notes h3 {
+    margin: 0 0 8px;
+    font-size: 13px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--amber);
+  }
+  .design-notes ul { margin: 0; padding-left: 20px; }
+  .design-notes li { margin: 4px 0; }
+  .design-notes code {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    background: rgba(0,0,0,0.05);
+    padding: 1px 5px; border-radius: 3px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Mockup banner ── -->
+<div class="mockup-banner">
+  <div>
+    <span class="pill">PHASE 4 MOCKUP · STEP 1</span>
+    <b>Dashboard Drill-Through</b> · hover any tile to see the data source · click any tile to see its detail page
+  </div>
+  <div class="links">
+    <a href="#dashboard">Dashboard</a>
+    <a href="#detail">Revenue detail wireframe</a>
+    <a href="#notes">Design notes</a>
+  </div>
+</div>
+
+<div class="layout">
+
+  <!-- ── Sidebar (visual only, matches portal shell) ── -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">K</div>
+      <div>
+        <div class="brand-name">Klein Mfg</div>
+        <div class="brand-sub">Sales Portal</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <ul>
+        <li><a class="active" href="#dashboard"><span class="nav-icon">📊</span> Dashboard</a></li>
+        <li><a href="#"><span class="nav-icon">🎯</span> Today</a></li>
+        <li><a href="#"><span class="nav-icon">📨</span> Outreach</a></li>
+        <li><a href="#"><span class="nav-icon">👥</span> Leads</a></li>
+        <li><a href="#"><span class="nav-icon">📦</span> Shipments</a></li>
+        <li><a href="#"><span class="nav-icon">📝</span> Prompts</a></li>
+        <li><a href="#"><span class="nav-icon">📈</span> Analytics</a></li>
+        <li><a href="#"><span class="nav-icon">⚙️</span> Settings</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main class="main">
+
+    <!-- ════════════════════════════════════════════
+         DASHBOARD (live mockup)
+         ════════════════════════════════════════════ -->
+    <section class="page" id="dashboard">
+
+      <h1 class="page-title">Dashboard</h1>
+      <div class="page-section-label">Top metrics</div>
+
+      <!-- ── KPI ROW ── -->
+      <div class="kpi-grid">
+
+        <!-- Active Leads -->
+        <a class="kpi-card has-tip" href="/portal/leads?status_in=new,invited,contacted,engaged,sample_sent,quoted,nurture">
+          <span class="clickhint">View →</span>
+          <div class="kpi-head">
+            <span class="kpi-icon">👥</span>
+          </div>
+          <div class="kpi-value">66</div>
+          <div class="kpi-label">Active Leads <span class="arrow">→</span></div>
+          <div class="tip">
+            <span class="tip-source">Source · leads</span>
+            Count of leads where <code>status NOT IN ('won','lost')</code> AND <code>(wake_up_at IS NULL OR wake_up_at &lt;= now())</code>.
+            <br>Click → filtered Leads list with all active stages selected.
+          </div>
+        </a>
+
+        <!-- Follow-Ups Due -->
+        <a class="kpi-card has-tip" href="/portal/today">
+          <span class="clickhint">View →</span>
+          <div class="kpi-head">
+            <span class="kpi-icon">🔔</span>
+            <span class="kpi-badge">36</span>
+          </div>
+          <div class="kpi-value">36</div>
+          <div class="kpi-label">Follow-Ups Due <span class="arrow">→</span></div>
+          <div class="tip">
+            <span class="tip-source">Source · today queue</span>
+            Leads surfaced by the cadence engine for today, plus any with manual <code>follow_up_date &lt;= today</code> and <code>status NOT IN ('won','lost')</code>.
+            <br>Click → /portal/today.
+          </div>
+        </a>
+
+        <!-- Samples Sent (30d) -->
+        <a class="kpi-card has-tip" href="/portal/shipments?since=30d">
+          <span class="clickhint">View →</span>
+          <div class="kpi-head">
+            <span class="kpi-icon">📦</span>
+          </div>
+          <div class="kpi-value">22</div>
+          <div class="kpi-label">Samples Sent (30d) <span class="arrow">→</span></div>
+          <div class="tip">
+            <span class="tip-source">Source · shipments</span>
+            <code>COUNT(*)</code> of shipments where <code>shipped_at &gt;= now() - interval '30 days'</code>.
+            <br>Click → /portal/shipments filtered to last 30 days.
+          </div>
+        </a>
+
+        <!-- Wins This Year -->
+        <a class="kpi-card has-tip" href="/portal/leads?status=won&won_year=2026">
+          <span class="clickhint">View →</span>
+          <div class="kpi-head">
+            <span class="kpi-icon">🏆</span>
+          </div>
+          <div class="kpi-value">2</div>
+          <div class="kpi-label">Wins This Year <span class="arrow">→</span></div>
+          <div class="tip">
+            <span class="tip-source">Source · leads</span>
+            Leads where <code>status = 'won'</code> AND <code>year(closed_won_at) = current year</code>.
+            <br><em>New column <code>closed_won_at</code> backfilled from the most recent <code>web_order</code> activity (migration 018).</em>
+            <br>Click → Leads filtered to this year's wins.
+          </div>
+        </a>
+
+      </div>
+
+      <!-- ── MIDDLE ROW ── -->
+      <div class="middle-row">
+
+        <!-- This Year panel -->
+        <section class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">This Year</h2>
+            <span class="panel-meta">Year-to-date · 2026</span>
+          </div>
+
+          <div class="ty-grid">
+
+            <!-- Revenue -->
+            <a class="ty-tile has-tip" href="/portal/analytics/revenue/2026">
+              <span class="ty-edit-tag">Edit ↗</span>
+              <div class="ty-label">Revenue</div>
+              <div class="ty-value">$100</div>
+              <div class="ty-hint">1 of 1 web order shipped · 0 manual</div>
+              <div class="tip">
+                <span class="tip-source">Source · orders + manual_orders</span>
+                SUM(<code>orders.total_charged</code>) where <code>is_sample = false</code>
+                + SUM(<code>manual_orders.total_revenue</code>) for the year.
+                <br>Click → table of every revenue-contributing order with an "Add Manual Order" button.
+              </div>
+            </a>
+
+            <!-- Parts sold -->
+            <a class="ty-tile has-tip" href="/portal/analytics/parts-sold/2026">
+              <span class="ty-edit-tag">Edit ↗</span>
+              <div class="ty-label">Parts sold</div>
+              <div class="ty-value">1</div>
+              <div class="ty-hint">6in + 11in across web + manual</div>
+              <div class="tip">
+                <span class="tip-source">Source · orders + manual_orders</span>
+                SUM(<code>orders.product_6in_qty + product_11in_qty</code>) where <code>is_sample = false</code>
+                + SUM of <code>parts[].qty</code> from <code>manual_orders</code> for the year.
+                <br>Click → line-item view of every order.
+              </div>
+            </a>
+
+            <!-- Free samples shipped -->
+            <a class="ty-tile has-tip" href="/portal/analytics/samples/2026">
+              <span class="ty-edit-tag">Edit ↗</span>
+              <div class="ty-label">Free samples shipped</div>
+              <div class="ty-value">0</div>
+              <div class="ty-hint">in last 30d · 22 sent</div>
+              <div class="tip">
+                <span class="tip-source">Source · shipments</span>
+                <code>COUNT(*)</code> of shipments where <code>is_sample = true</code> AND <code>year(shipped_at) = current year</code>.
+                <br><em>New nullable column <code>is_sample</code> backfilled <code>true</code> on existing rows (migration 018).</em>
+                <br>Click → editable table with <code>shipped_at</code> and qty inline edits.
+              </div>
+            </a>
+
+            <!-- Won deals -->
+            <a class="ty-tile has-tip" href="/portal/analytics/won/2026">
+              <span class="ty-edit-tag">Edit ↗</span>
+              <div class="ty-label">Won deals</div>
+              <div class="ty-value">2</div>
+              <div class="ty-hint">Most recent · 3d ago</div>
+              <div class="tip">
+                <span class="tip-source">Source · leads</span>
+                Leads where <code>status = 'won'</code> AND <code>year(closed_won_at) = current year</code>.
+                Deal value joined from linked <code>manual_orders</code> or <code>orders</code> rows.
+                <br>Click → list with closed-won date, customer, deal value.
+              </div>
+            </a>
+
+          </div>
+
+          <!-- Won-deals strip preserved -->
+          <div class="won-list-wrap">
+            <div class="won-list-head">Won deals this year</div>
+            <ul class="won-list">
+              <li>
+                <div>
+                  <div class="name">Mark Reynolds</div>
+                  <div class="co">Boeing</div>
+                </div>
+                <div class="when">3d ago</div>
+              </li>
+              <li>
+                <div>
+                  <div class="name">Lori Chen</div>
+                  <div class="co">Delta TechOps</div>
+                </div>
+                <div class="when">Apr 28</div>
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <!-- Follow-Ups Due (visual placeholder) -->
+        <section class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">Follow-Ups Due</h2>
+            <a href="#" class="panel-meta">Open Today →</a>
+          </div>
+          <div class="panel-meta" style="margin-top:4px;">Overdue + next 3 days, by manual follow-up date. Parked leads hidden.</div>
+          <div style="margin-top:14px; font-size:13px; color:var(--steel);">
+            <em>(No structural changes — Phase 4 leaves this panel as-is.)</em>
+          </div>
+        </section>
+      </div>
+
+      <!-- Data-as-of footer (Step 6) -->
+      <div class="data-footer">
+        <span class="dot"></span>
+        Data as of May 10 2026, 9:42 AM PT · click any tile above to see the source records.
+      </div>
+
+    </section>
+
+
+    <!-- ════════════════════════════════════════════
+         WIREFRAME — REVENUE DETAIL PAGE
+         ════════════════════════════════════════════ -->
+    <section class="page" id="detail">
+      <div class="wireframe-section">
+        <span class="wireframe-label">Wireframe · /portal/analytics/revenue/2026</span>
+
+        <div class="breadcrumb">
+          <a href="#dashboard">Dashboard</a> &nbsp;›&nbsp; Analytics &nbsp;›&nbsp; <strong>Revenue · 2026</strong>
+        </div>
+        <h2 class="page-title" style="margin-top:6px;">Revenue · 2026</h2>
+        <div class="panel-meta">Year-to-date revenue across web orders (Stripe) and offline orders entered manually.</div>
+
+        <!-- Summary cards -->
+        <div class="summary-row">
+          <div class="summary-card">
+            <div class="lbl">Web orders</div>
+            <div class="val">$100</div>
+            <div class="panel-meta" style="margin-top:4px;">1 paid order</div>
+          </div>
+          <div class="summary-card">
+            <div class="lbl">Manual orders</div>
+            <div class="val">$0</div>
+            <div class="panel-meta" style="margin-top:4px;">0 entered</div>
+          </div>
+          <div class="summary-card total">
+            <div class="lbl">Total revenue · 2026</div>
+            <div class="val">$100</div>
+            <div class="panel-meta" style="margin-top:4px; color:rgba(255,255,255,0.7);">Web + manual</div>
+          </div>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="table-toolbar">
+          <h3>All revenue-contributing orders (1)</h3>
+          <button class="add-btn" type="button">+ Add Manual Order</button>
+        </div>
+
+        <!-- Table -->
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Order date <span class="sort">▾</span></th>
+              <th>Source</th>
+              <th>Customer</th>
+              <th>Company</th>
+              <th>6in</th>
+              <th>11in</th>
+              <th class="num">Total</th>
+              <th>Lead</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Mar 12, 2026</td>
+              <td><span class="src-tag web">Web · Stripe</span></td>
+              <td>Test Customer</td>
+              <td>—</td>
+              <td>1</td>
+              <td>0</td>
+              <td class="num">$100.00</td>
+              <td><a href="#" style="color:var(--navy); text-decoration:underline; text-underline-offset:2px;">View lead →</a></td>
+              <td><div class="row-actions"><button>View</button></div></td>
+            </tr>
+            <tr style="background:rgba(254,243,199,0.40);">
+              <td colspan="9" style="text-align:center; color:var(--steel); font-style:italic; padding:14px;">
+                Manual orders appear here once added. Boeing and Delta direct POs go here.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- Add Manual Order form -->
+        <div class="add-form">
+          <h4>Add Manual Order</h4>
+          <div class="field-grid">
+
+            <div class="field">
+              <label>Customer name *</label>
+              <input type="text" placeholder="e.g. Mark Reynolds" />
+            </div>
+            <div class="field">
+              <label>Customer company</label>
+              <input type="text" placeholder="e.g. Boeing" />
+            </div>
+
+            <div class="field">
+              <label>Order date *</label>
+              <input type="date" value="2026-05-10" />
+            </div>
+            <div class="field">
+              <label>Link to existing lead (optional)</label>
+              <select>
+                <option>— None —</option>
+                <option>Mark Reynolds · Boeing</option>
+                <option>Lori Chen · Delta TechOps</option>
+              </select>
+            </div>
+
+            <div class="field full">
+              <label>Parts</label>
+              <div class="parts-row">
+                <select>
+                  <option>6in</option>
+                  <option>11in</option>
+                </select>
+                <input type="number" placeholder="Qty" min="1" value="1" />
+                <input type="text" placeholder="Unit price ($)" value="100.00" />
+                <span style="color:var(--steel); font-size:12px;">Line total: <strong style="color:var(--navy);">$100.00</strong></span>
+              </div>
+              <a href="#" class="add-part-link">+ Add another line</a>
+            </div>
+
+            <div class="field">
+              <label>Total revenue ($) *</label>
+              <input type="text" value="100.00" />
+            </div>
+            <div class="field">
+              <label>Source tag</label>
+              <input type="text" value="manual" disabled style="opacity:0.6;" />
+            </div>
+
+            <div class="field full">
+              <label>Notes</label>
+              <textarea rows="2" placeholder="PO #, ship date, channel, anything Sean wants to remember"></textarea>
+            </div>
+
+          </div>
+
+          <div class="form-actions">
+            <button class="btn-secondary" type="button">Cancel</button>
+            <button class="btn-primary" type="button">Save manual order</button>
+          </div>
+        </div>
+
+        <div style="margin-top:14px; font-size:12px; color:var(--steel);">
+          Saving inserts a row into <code>manual_orders</code>; the Revenue tile on the dashboard recomputes (web + manual) on next load.
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ════════════════════════════════════════════
+         DESIGN NOTES (for Sean)
+         ════════════════════════════════════════════ -->
+    <section class="page" id="notes" style="padding-top:0;">
+      <div class="design-notes">
+        <h3>Design notes — please confirm before Step 2</h3>
+        <ul>
+          <li><strong>Top KPI row:</strong> already clickable today; Phase 4 changes the hrefs to Sean's exact spec — Active Leads now uses <code>status_in=new,invited,contacted,engaged,sample_sent,quoted,nurture</code> (not the open list), Samples Sent uses <code>?since=30d</code>, Wins uses <code>?status=won&won_year=2026</code>. The Leads page client needs to read <code>status_in</code> and <code>won_year</code> from the URL — Step 2 work.</li>
+          <li><strong>"This Year" tiles:</strong> currently static cards; Phase 4 wraps each in a <code>&lt;Link&gt;</code> with the same styling as today, plus the hover tooltip and an "Edit ↗" badge that fades in on hover.</li>
+          <li><strong>Tooltips:</strong> implemented as a small navy popover anchored above the card; appears on hover and on keyboard focus (accessibility). Each names its source table(s) so Sean can always trace a number to its query.</li>
+          <li><strong>Schema additions (migration 018):</strong>
+            <ul>
+              <li>New <code>manual_orders</code> table (id, customer_name, customer_company, order_date, parts jsonb, total_revenue, source default 'manual', notes, lead_id nullable FK).</li>
+              <li><code>shipments.is_sample</code> boolean (nullable). Backfilled <code>true</code> on existing rows — every CRM-side shipment has historically been a sample. Plus <code>qty_6in</code> / <code>qty_11in</code> integers (nullable) for the editable Parts column on the samples detail page.</li>
+              <li><code>leads.closed_won_at</code> timestamptz (nullable). Backfilled for current won leads via MAX(<code>activities.created_at</code> where type='web_order'), with a fallback to <code>last_activity_at</code>. Phase 4 also wires the lead-detail "Mark as Won" handler to stamp this column on transition (currently only the status field updates — confirmed by reading <code>updateLeadField</code> + <code>LeadDetailClient.tsx:179</code>).</li>
+            </ul>
+          </li>
+          <li><strong>Detail pages:</strong> all four use the same shell — breadcrumb, summary cards (split + total), sortable table, optional "Add" button on Revenue. Inline edits on the Samples page use the same field shape as the Add Manual Order form.</li>
+          <li><strong>Brand:</strong> navy (<code>#1C2E4A</code>) + red (<code>#A52A2A</code>) only. No new fonts. Card styling matches the existing dashboard exactly — same border, shadow, padding, hover feel.</li>
+          <li><strong>Footer line:</strong> Step 6 adds the "Data as of {timestamp}; click any tile to see the source records" line at the bottom of the dashboard so Sean never wonders where a number came from.</li>
+        </ul>
+        <h3 style="margin-top:14px;">Two open questions</h3>
+        <ul>
+          <li><strong>Samples-shipped source.</strong> Today the dashboard's "Free samples shipped" tile reads <code>orders</code> where <code>is_sample = true AND shipping_status = 'shipped'</code> (Stripe-side $0 sample-form orders). Sean's spec says read from <code>shipments</code> (CRM-side LinkedIn samples). After migration 018 both tables have an <code>is_sample</code> flag. <strong>Recommendation:</strong> the detail page reads <code>shipments</code> per spec; the dashboard tile <em>also</em> moves to <code>shipments</code> so the count and the detail page agree. Confirm OK.</li>
+          <li><strong>"Mark as Won" wiring.</strong> The lead-detail page currently flips status via <code>updateLeadField('status', 'won')</code> with no <code>closed_won_at</code> stamp. Step 2 adds a small server-side hook (or wraps the call) so the column gets stamped automatically on the win transition. Existing won leads are covered by the migration's backfill.</li>
+        </ul>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+</body>
+</html>
