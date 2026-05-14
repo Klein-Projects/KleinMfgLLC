@@ -38,6 +38,25 @@ const TRIGGER_SHORT_LABEL: Record<string, string> = {
 
 const UNDO_WINDOW_SECONDS = 8;
 
+// Catch-up mode toggle.
+//
+// When AUTO_LOG_ON_PRIMARY is true (original behavior): clicking
+// "Copy script + Open LinkedIn" copies the script, opens LinkedIn,
+// AND immediately POSTs to /api/leads/:id/mark-contacted, moving
+// the card to Done. Good once Sean is back in normal cadence and
+// trusts that every primary click means he's actually sending.
+//
+// When false (catch-up mode, current setting): the primary button
+// only copies + opens. Sean checks LinkedIn to see whether he's
+// already messaged the person off-portal, then comes back and
+// either clicks "Already sent" (backdate) or "Mark contacted"
+// (log at now). The card stays in Today until he actively logs.
+//
+// Sean asked for catch-up mode while he works through the backlog
+// of leads where the 3-day message went out off-portal weeks ago.
+// Flip this back to true once the catch-up batch is cleared.
+const AUTO_LOG_ON_PRIMARY = false;
+
 interface UndoState {
   message: string;
   payload: unknown;
@@ -109,6 +128,67 @@ export default function TodayCards({ cards }: { cards: TodayCard[] }) {
     }
   }, [undo, dismissUndo, router]);
 
+  // Shared "log this send via mark-contacted" routine. Used by the
+  // auto-log primary click (when enabled), the explicit "Mark contacted"
+  // secondary button, and the "Already sent" backdate flow.
+  const logSendForCard = useCallback(
+    async (card: TodayCard, sentAtISO: string | null) => {
+      const isBackdate = sentAtISO !== null;
+      const body: Record<string, unknown> = {
+        rule_id: card.rule.id,
+        prompt_id: card.recommended_prompt.id,
+        channel: card.channel,
+        action_on_send: card.rule.action_on_send,
+        auto_log_summary: isBackdate
+          ? `Backfilled "${card.rule.name}" (sent off-portal)`
+          : `Sent via "${card.rule.name}"`,
+      };
+      if (isBackdate) body.sent_at = sentAtISO;
+
+      const res = await fetch(
+        `/api/leads/${card.lead_id}/mark-contacted`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      const markedLost = card.rule.action_on_send === "mark_lost";
+      const stampLabel = isBackdate
+        ? formatStampForSentAt(sentAtISO!)
+        : nowStamp();
+      setActioned((prev) => ({
+        ...prev,
+        [card.lead_id]: {
+          stamp: stampLabel,
+          ruleName: card.rule.name,
+          markedLost,
+        },
+      }));
+      showUndo({
+        message: isBackdate
+          ? `Logged "${card.rule.name}" for ${card.contact.full_name} as sent ${stampLabel}`
+          : markedLost
+            ? `Logged "${card.rule.name}" for ${card.contact.full_name} · marked Lost`
+            : `Logged "${card.rule.name}" for ${card.contact.full_name}`,
+        payload: data.undo,
+        leadId: card.lead_id,
+      });
+      if (isBackdate) {
+        // Backdating may flip the lead to a later-stage rule whose
+        // window has already opened; refresh so it re-surfaces with
+        // the right prompt instead of disappearing.
+        router.refresh();
+      }
+    },
+    [router, showUndo],
+  );
+
   const onPrimaryClick = useCallback(
     async (card: TodayCard) => {
       if (pendingId) return;
@@ -121,56 +201,50 @@ export default function TodayCards({ cards }: { cards: TodayCard[] }) {
       try {
         await navigator.clipboard.writeText(promptBody);
       } catch {
-        setError("Couldn't copy to clipboard. Script logged anyway.");
+        setError(
+          AUTO_LOG_ON_PRIMARY
+            ? "Couldn't copy to clipboard. Script logged anyway."
+            : "Couldn't copy to clipboard.",
+        );
       }
 
       if (linkedinUrl) {
         window.open(linkedinUrl, "_blank", "noopener,noreferrer");
       }
 
+      // In catch-up mode (AUTO_LOG_ON_PRIMARY=false) we stop here.
+      // Sean confirms the send manually via "Mark contacted" or
+      // "Already sent" after checking LinkedIn.
+      if (!AUTO_LOG_ON_PRIMARY) {
+        setPendingId(null);
+        return;
+      }
+
       try {
-        const res = await fetch(
-          `/api/leads/${card.lead_id}/mark-contacted`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              rule_id: card.rule.id,
-              prompt_id: card.recommended_prompt.id,
-              channel: card.channel,
-              action_on_send: card.rule.action_on_send,
-              auto_log_summary: `Sent via "${card.rule.name}"`,
-            }),
-          },
-        );
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.error ?? `HTTP ${res.status}`);
-        }
-        const data = await res.json();
-        const markedLost = card.rule.action_on_send === "mark_lost";
-        setActioned((prev) => ({
-          ...prev,
-          [card.lead_id]: {
-            stamp: nowStamp(),
-            ruleName: card.rule.name,
-            markedLost,
-          },
-        }));
-        showUndo({
-          message: markedLost
-            ? `Logged "${card.rule.name}" for ${card.contact.full_name} · marked Lost`
-            : `Logged "${card.rule.name}" for ${card.contact.full_name}`,
-          payload: data.undo,
-          leadId: card.lead_id,
-        });
+        await logSendForCard(card, null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to log contact");
       } finally {
         setPendingId(null);
       }
     },
-    [pendingId, showUndo],
+    [pendingId, logSendForCard],
+  );
+
+  const onMarkContacted = useCallback(
+    async (card: TodayCard) => {
+      if (pendingId) return;
+      setPendingId(card.lead_id);
+      setError(null);
+      try {
+        await logSendForCard(card, null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to log contact");
+      } finally {
+        setPendingId(null);
+      }
+    },
+    [pendingId, logSendForCard],
   );
 
   const onAlreadySent = useCallback(
@@ -179,51 +253,14 @@ export default function TodayCards({ cards }: { cards: TodayCard[] }) {
       setPendingId(card.lead_id);
       setError(null);
       try {
-        const res = await fetch(
-          `/api/leads/${card.lead_id}/mark-contacted`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              rule_id: card.rule.id,
-              prompt_id: card.recommended_prompt.id,
-              channel: card.channel,
-              action_on_send: card.rule.action_on_send,
-              auto_log_summary: `Backfilled "${card.rule.name}" (sent off-portal)`,
-              sent_at: sentAtISO,
-            }),
-          },
-        );
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.error ?? `HTTP ${res.status}`);
-        }
-        const data = await res.json();
-        const markedLost = card.rule.action_on_send === "mark_lost";
-        const stampLabel = formatStampForSentAt(sentAtISO);
-        setActioned((prev) => ({
-          ...prev,
-          [card.lead_id]: {
-            stamp: stampLabel,
-            ruleName: card.rule.name,
-            markedLost,
-          },
-        }));
-        showUndo({
-          message: `Logged "${card.rule.name}" for ${card.contact.full_name} as sent ${stampLabel}`,
-          payload: data.undo,
-          leadId: card.lead_id,
-        });
-        // Refresh so the cadence engine re-evaluates and the next-stage
-        // prompt surfaces if its window has already opened.
-        router.refresh();
+        await logSendForCard(card, sentAtISO);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to backfill");
       } finally {
         setPendingId(null);
       }
     },
-    [pendingId, router, showUndo],
+    [pendingId, logSendForCard],
   );
 
   const onMarkNotInterested = useCallback(
@@ -280,6 +317,22 @@ export default function TodayCards({ cards }: { cards: TodayCard[] }) {
 
   return (
     <div className="max-w-3xl">
+      {!AUTO_LOG_ON_PRIMARY && (
+        <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <span className="font-bold uppercase tracking-wide text-[11px] mr-2">
+            Catch-up mode
+          </span>
+          The primary button only copies the script and opens LinkedIn — it
+          does <span className="font-semibold">not</span> auto-log the send.
+          After checking the LinkedIn thread, click{" "}
+          <span className="font-semibold">Mark contacted</span> if you just
+          sent it, or <span className="font-semibold">Already sent</span> to
+          backdate a message you sent off-portal. Flip back to auto-log later
+          by setting <code className="rounded bg-amber-100 px-1 py-0.5 text-[12px]">AUTO_LOG_ON_PRIMARY = true</code>{" "}
+          in <code className="rounded bg-amber-100 px-1 py-0.5 text-[12px]">TodayCards.tsx</code>.
+        </div>
+      )}
+
       {error && (
         <div className="mt-4 rounded-md border border-red/30 bg-red/5 px-4 py-2 text-sm text-red">
           {error}
@@ -293,6 +346,7 @@ export default function TodayCards({ cards }: { cards: TodayCard[] }) {
             card={card}
             pending={pendingId === card.lead_id}
             onPrimary={() => onPrimaryClick(card)}
+            onMarkContacted={() => onMarkContacted(card)}
             onMarkNotInterested={() => onMarkNotInterested(card)}
             onAddLinkedIn={() => setEditingLinkedInFor(card)}
             onPark={() => setParkingFor(card)}
@@ -373,6 +427,7 @@ function CardView({
   card,
   pending,
   onPrimary,
+  onMarkContacted,
   onMarkNotInterested,
   onAddLinkedIn,
   onPark,
@@ -381,6 +436,7 @@ function CardView({
   card: TodayCard;
   pending: boolean;
   onPrimary: () => void;
+  onMarkContacted: () => void;
   onMarkNotInterested: () => void;
   onAddLinkedIn: () => void;
   onPark: () => void;
@@ -487,6 +543,18 @@ function CardView({
           >
             <Pencil className="h-3.5 w-3.5" />
             Add LinkedIn URL
+          </button>
+        )}
+        {!AUTO_LOG_ON_PRIMARY && (
+          <button
+            type="button"
+            onClick={onMarkContacted}
+            disabled={pending}
+            className="inline-flex items-center gap-1.5 rounded-md border border-navy/30 bg-white px-3 py-2 text-sm font-semibold text-navy transition-colors hover:bg-navy/5 disabled:opacity-50"
+            title="I just sent this message — log it as sent today"
+          >
+            <Check className="h-3.5 w-3.5" strokeWidth={2.4} />
+            Mark contacted
           </button>
         )}
         <button
