@@ -209,9 +209,17 @@ export default function ReviewQueuePageClient({
       {error && (
         <div
           role="alert"
-          className="mb-4 rounded-md border border-red bg-red/10 px-4 py-3 text-sm font-semibold text-red"
+          className="fixed left-1/2 top-4 z-50 flex w-[min(40rem,calc(100%-2rem))] -translate-x-1/2 items-start gap-3 rounded-md border border-red bg-red/10 px-4 py-3 text-sm font-semibold text-red shadow-lg backdrop-blur-sm"
         >
-          {error}
+          <span className="flex-1">{error}</span>
+          <button
+            type="button"
+            onClick={() => setError("")}
+            aria-label="Dismiss error"
+            className="-mr-1 -mt-0.5 rounded p-0.5 text-red hover:bg-red/10"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
       )}
 
