@@ -552,9 +552,15 @@ function RowSummary({ item }: { item: QueueItem }) {
     );
   }
   if (item.kind === "new_activity") {
+    const direction = asStr(item.payload.direction) ?? "outbound";
+    const senderName = asStr(item.payload.sender_name);
+    // For inbound DMs sender_name = the lead. For outbound it's Sean —
+    // not useful as a row title, fall back to whatever lead we resolved.
+    const display =
+      name || (direction === "inbound" ? senderName : null) || proposedName;
     return (
       <span className="text-sm font-semibold text-navy">
-        {name || proposedName || "Activity"}
+        {display || "Activity"}
       </span>
     );
   }
@@ -589,14 +595,37 @@ function RowDetail({ item }: { item: QueueItem }) {
 
   if (item.kind === "new_activity") {
     const direction = asStr(item.payload.direction) ?? "outbound";
-    const excerpt =
+    // The DM scraper writes the message under `body`; fall back to the
+    // legacy field names in case anything else feeds review_queue.
+    const body =
+      asStr(item.payload.body) ??
       asStr(item.payload.summary) ??
       asStr(item.payload.first_message_excerpt) ??
       asStr(item.payload.message_excerpt);
+    const leadName = item.lead ? fullName(item.lead) : "";
+    const senderName = asStr(item.payload.sender_name);
+    const counterpart = direction === "inbound"
+      ? (senderName || leadName)
+      : leadName;
+    const occurredAt = asStr(item.payload.occurred_at);
     return (
-      <div className="mt-1 text-sm text-navy/80">
-        {direction === "inbound" ? "Inbound" : "Outbound"} message
-        {excerpt && <span className="ml-1 text-steel">— "{excerpt}"</span>}
+      <div className="mt-1 space-y-1.5">
+        <div className="text-xs text-steel">
+          <span className="font-bold uppercase tracking-wide">
+            {direction === "inbound" ? "From" : "To"}:
+          </span>{" "}
+          <span className="font-semibold text-navy">
+            {counterpart || (item.linkedin_thread_id ? "(thread not yet linked to a lead)" : "(unknown)")}
+          </span>
+          {occurredAt && (
+            <span className="ml-2">· sent {fmtRelative(occurredAt)}</span>
+          )}
+        </div>
+        {body && (
+          <pre className="whitespace-pre-wrap break-words rounded border border-navy/10 bg-offwhite/60 px-3 py-2 font-sans text-sm leading-relaxed text-navy">
+            {body}
+          </pre>
+        )}
       </div>
     );
   }

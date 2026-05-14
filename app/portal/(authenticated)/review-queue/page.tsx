@@ -62,5 +62,46 @@ export default async function ReviewQueuePage() {
     );
   }
 
-  return <ReviewQueuePageClient items={(rows as unknown as QueueItem[]) ?? []} />;
+  const items = (rows as unknown as QueueItem[]) ?? [];
+
+  // Second pass: scraped new_activity / stage_change rows arrive with
+  // lead_id=null because the scraper stages them by linkedin_thread_id
+  // and lets the approve step resolve. Until then, the FK join above
+  // returns no lead so the row reads as "Activity" with no recipient.
+  // Resolve those by thread_id here so the UI can show "To: X" / "From: X".
+  const threadIds = Array.from(
+    new Set(
+      items
+        .filter((it) => !it.lead && it.linkedin_thread_id)
+        .map((it) => it.linkedin_thread_id as string),
+    ),
+  );
+  if (threadIds.length > 0) {
+    const { data: byThread } = await supabase
+      .from("leads")
+      .select(
+        `id, status, linkedin_thread_id,
+         contact:contacts(first_name, last_name),
+         company:companies(name)`,
+      )
+      .in("linkedin_thread_id", threadIds);
+
+    const threadMap = new Map<string, QueueItem["lead"]>();
+    for (const r of (byThread ?? []) as unknown as Array<
+      QueueItem["lead"] & { linkedin_thread_id: string }
+    >) {
+      if (r?.linkedin_thread_id) {
+        const { linkedin_thread_id: _drop, ...rest } = r as any;
+        threadMap.set(r.linkedin_thread_id, rest as QueueItem["lead"]);
+      }
+    }
+    for (const it of items) {
+      if (!it.lead && it.linkedin_thread_id) {
+        const resolved = threadMap.get(it.linkedin_thread_id);
+        if (resolved) it.lead = resolved;
+      }
+    }
+  }
+
+  return <ReviewQueuePageClient items={items} />;
 }
