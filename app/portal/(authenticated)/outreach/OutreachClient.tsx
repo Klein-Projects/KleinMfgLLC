@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Check, AlertTriangle, ExternalLink, ClipboardList, X } from "lucide-react";
 
 interface PromptOption {
@@ -117,6 +117,10 @@ export default function OutreachClient({
 }) {
   const [blob, setBlob] = useState("");
   const [cards, setCards] = useState<CardState[]>([]);
+  // Ref to the paste textarea so we can refocus it after a successful log
+  // — Sean works one URL at a time (he has to type title + company) and
+  // wants to paste the next URL without an extra click to clear / focus.
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [defaultPromptId, setDefaultPromptId] = useState<string>(
     prompts.find((p) => p.category === "first_contact")?.id ?? prompts[0]?.id ?? "",
   );
@@ -336,6 +340,11 @@ export default function OutreachClient({
           leadId: data.lead_id,
           errorMsg: undefined,
         };
+        // Ready the paste box for the next URL. The just-logged card stays
+        // visible (with its green Logged · time stamp) until Sean parses
+        // a new URL, at which point setCards replaces them.
+        setBlob("");
+        textareaRef.current?.focus();
         return next;
       });
     } catch (e) {
@@ -395,6 +404,7 @@ export default function OutreachClient({
         </p>
 
         <textarea
+          ref={textareaRef}
           value={blob}
           onChange={(e) => setBlob(e.target.value)}
           placeholder={
