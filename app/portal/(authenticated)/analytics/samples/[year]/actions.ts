@@ -22,12 +22,12 @@ export async function updateShipment(input: UpdateShipmentInput) {
   if ("shipped_at" in input) patch.shipped_at = input.shipped_at || null;
   if ("qty_6in" in input)
     patch.qty_6in =
-      input.qty_6in == null || input.qty_6in === ""
+      input.qty_6in == null
         ? null
         : Math.max(0, Math.floor(Number(input.qty_6in)));
   if ("qty_11in" in input)
     patch.qty_11in =
-      input.qty_11in == null || input.qty_11in === ""
+      input.qty_11in == null
         ? null
         : Math.max(0, Math.floor(Number(input.qty_11in)));
   if ("is_sample" in input) patch.is_sample = !!input.is_sample;
