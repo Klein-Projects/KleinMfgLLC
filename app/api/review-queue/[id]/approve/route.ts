@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { classifyLead } from "@/lib/portal/classify-lead";
 
 // POST /api/review-queue/:id/approve — Phase 2
 //
@@ -453,7 +454,38 @@ export async function POST(
       }
       await supabase.from("leads").update(leadUpdates).eq("id", lead.id);
 
-      appliedSummary = { lead_id: lead.id, activity_id: activity.id };
+      // Phase 2: refresh the lead's conversation_state now that a new
+      // activity has landed. Best-effort — a classifier failure (Haiku
+      // down, parse error) must NOT roll back the approved activity.
+      // The build plan's literal wording puts this hook in inbox-sync
+      // "after each new_activity insert"; in current architecture
+      // inbox-sync writes proposals, not activities — so the actual
+      // insert happens here. Phase 5 (auto-apply) will add the second
+      // call site directly in inbox-sync once routine new_activity
+      // proposals start bypassing review_queue.
+      let classifyOutcome:
+        | { ok: true; conversation_state: string; matched_prompt: boolean }
+        | { ok: false; error: string }
+        | null = null;
+      try {
+        const cls = await classifyLead(supabase, lead.id);
+        classifyOutcome = {
+          ok: true,
+          conversation_state: cls.conversation_state,
+          matched_prompt: cls.matched_prompt,
+        };
+      } catch (e: unknown) {
+        classifyOutcome = {
+          ok: false,
+          error: e instanceof Error ? e.message : "classify failed",
+        };
+      }
+
+      appliedSummary = {
+        lead_id: lead.id,
+        activity_id: activity.id,
+        classify: classifyOutcome,
+      };
     } else if (kind === "stage_change") {
       const lead = await resolveLead();
       if (!lead) {
