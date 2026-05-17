@@ -973,8 +973,8 @@ export default function LeadDetailClient({
                           {formatDateTime(activity.created_at)}
                         </span>
                       </div>
-                      <p className="mt-1 text-sm text-charcoal">
-                        {activity.summary}
+                      <p className="mt-1 whitespace-pre-wrap text-sm text-charcoal">
+                        {activity.body ?? activity.summary}
                       </p>
                       {activity.outcome && (
                         <p className="mt-0.5 text-xs text-charcoal/60">

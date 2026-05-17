@@ -113,6 +113,16 @@ function asStr(v: unknown): string | null {
   return t === "" ? null : t;
 }
 
+// Short preview shown in compact contexts (Today queue, dashboards).
+// 120 chars + ellipsis matches what the activity log fallback shows
+// when no full body is available.
+const SUMMARY_PREVIEW_MAX = 120;
+function previewFromBody(body: string): string {
+  const collapsed = body.replace(/\s+/g, " ").trim();
+  if (collapsed.length <= SUMMARY_PREVIEW_MAX) return collapsed;
+  return collapsed.slice(0, SUMMARY_PREVIEW_MAX - 1).trimEnd() + "…";
+}
+
 function validateProposal(
   raw: unknown,
   index: number,
@@ -166,6 +176,18 @@ function validateProposal(
         ok: false,
         error: `proposal[${index}] new_activity needs lead_id, linkedin_thread_id, or linkedin_url`,
       };
+    }
+    // Conversation-aware capture: scraper may send the full message
+    // body so /portal/leads/[id] can render it verbatim. We accept it
+    // at the top of the proposal OR inside payload; canonicalize to
+    // payload.body and auto-derive payload.summary as a short preview
+    // when only a body was supplied.
+    const bodyRaw = o.body ?? (payload as Record<string, unknown>).body;
+    const body = asStr(bodyRaw);
+    const p = payload as Record<string, unknown>;
+    if (body) p.body = body;
+    if (body && !asStr(p.summary)) {
+      p.summary = previewFromBody(body);
     }
   }
   if (kind === "new_lead") {

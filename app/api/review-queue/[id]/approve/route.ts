@@ -410,11 +410,12 @@ export async function POST(
           { status: 400 },
         );
       }
+      const body = asStr(payload.body);
       const summary =
         asStr(payload.summary) ??
         asStr(payload.first_message_excerpt) ??
         asStr(payload.message_excerpt) ??
-        "Logged from DM scraper";
+        (body ? body : "Logged from DM scraper");
       const direction =
         asStr(payload.direction) === "inbound" ? "inbound" : "outbound";
       const occurredAt =
@@ -429,6 +430,7 @@ export async function POST(
         direction,
         source: "dm_inbox_scraper",
       };
+      if (body) insert.body = body;
       if (occurredAt) insert.created_at = occurredAt;
 
       const { data: activity, error: actErr } = await supabase
