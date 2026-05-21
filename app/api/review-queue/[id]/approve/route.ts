@@ -433,14 +433,49 @@ export async function POST(
       };
       if (body) insert.body = body;
       if (occurredAt) insert.created_at = occurredAt;
+      // Stable per-message dedupe key. The phantom-activity guard in
+      // /api/inbox-sync already skipped re-proposed messages — this
+      // persists the URN so the next sweep can recognize the activity.
+      const messageUrn = asStr(payload.linkedin_message_urn);
+      if (messageUrn) insert.linkedin_message_urn = messageUrn;
 
-      const { data: activity, error: actErr } = await supabase
+      // Belt-and-suspenders backstop against the unique partial index
+      // on activities.linkedin_message_urn: if a race between two
+      // concurrent approvals (or a stale review_queue row that
+      // somehow slipped past the inbox-sync URN check) tries to
+      // insert a duplicate URN, Postgres raises unique_violation
+      // (SQLSTATE 23505). We treat that as "ON CONFLICT DO NOTHING"
+      // — look up the existing activity and mark this approval as
+      // a no-op apply rather than failing. PostgREST upsert can't
+      // express the partial-index WHERE clause, so we error-handle
+      // here instead.
+      const insertRes = await supabase
         .from("activities")
         .insert(insert)
         .select("id")
         .single();
-      if (actErr || !activity) {
-        throw new Error(actErr?.message ?? "Failed to insert activity");
+      let activity = insertRes.data as { id: string } | null;
+      const insertErr = insertRes.error;
+      if (insertErr) {
+        if (messageUrn && insertErr.code === "23505") {
+          const { data: existing } = await supabase
+            .from("activities")
+            .select("id")
+            .eq("linkedin_message_urn", messageUrn)
+            .limit(1)
+            .maybeSingle();
+          activity = (existing as { id: string } | null) ?? null;
+          if (!activity) {
+            throw new Error(
+              "Duplicate linkedin_message_urn but existing row not found",
+            );
+          }
+        } else {
+          throw new Error(insertErr.message);
+        }
+      }
+      if (!activity) {
+        throw new Error("Failed to insert activity");
       }
 
       // Stamp linkedin_thread_id on the lead if we have one and it

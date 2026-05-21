@@ -43,6 +43,15 @@ import { createClient } from "@supabase/supabase-js";
 // (kind, linkedin_thread_id) tuple, or for new_lead by linkedin_url
 // when no thread_id is available.
 //
+// Phantom-activity backstop: for new_activity proposals carrying a
+// stable LinkedIn message URN (payload.linkedin_message_urn), skip
+// the proposal entirely when either (a) an activities row already
+// exists with that urn — the message was approved on a prior run,
+// or (b) a pending review_queue row already carries the same urn —
+// it's waiting for Sean's decision. Keyed on the URN, never on
+// occurred_at or any timestamp. The unique partial index on
+// activities.linkedin_message_urn is the database-level backstop.
+//
 // Side effect: bumps leads.last_inbox_sync_at on every resolved lead
 // so the next scrape can fetch incrementally.
 //
@@ -50,8 +59,8 @@ import { createClient } from "@supabase/supabase-js";
 // Supabase client; bypasses RLS.
 //
 // Returns 200 with { observed_at, total, inserted, skipped:
-// { existing_proposal, no_match_for_thread_only_kind, invalid },
-// inserted_ids[], reconciled[] }.
+// { existing_proposal, duplicate_message_urn }, inserted_ids[],
+// reconciled[] }.
 
 type ProposalKind =
   | "new_lead"
@@ -189,6 +198,11 @@ function validateProposal(
     if (body && !asStr(p.summary)) {
       p.summary = previewFromBody(body);
     }
+    // Stable per-message LinkedIn URN. Phantom-activity dedupe key.
+    // Accept it at the top of the proposal OR inside payload.
+    const urnRaw = o.linkedin_message_urn ?? p.linkedin_message_urn;
+    const urn = asStr(urnRaw);
+    if (urn) p.linkedin_message_urn = urn;
   }
   if (kind === "new_lead") {
     if (!linkedinUrl && !linkedinThreadId) {
@@ -330,7 +344,7 @@ export async function POST(req: NextRequest) {
       observed_at: observedAt,
       total: 0,
       inserted: 0,
-      skipped: { existing_proposal: 0, no_match: 0, invalid: 0 },
+      skipped: { existing_proposal: 0, duplicate_message_urn: 0 },
       inserted_ids: [],
       reconciled: [],
     });
@@ -470,6 +484,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: pendingErr.message }, { status: 500 });
   }
   const dedupeKeys = new Set<string>();
+  // URN-keyed dedupe set: every pending review_queue row that already
+  // carries a linkedin_message_urn. Catches the case where the scraper
+  // re-emits a message that hasn't been approved yet.
+  const pendingUrns = new Set<string>();
   for (const r of (existingPending ?? []) as Array<{
     kind: string;
     linkedin_thread_id: string | null;
@@ -478,6 +496,36 @@ export async function POST(req: NextRequest) {
     const url = (r.payload?.linkedin_url ?? null) as string | null;
     if (r.linkedin_thread_id) dedupeKeys.add(`${r.kind}::tid::${r.linkedin_thread_id}`);
     if (url) dedupeKeys.add(`${r.kind}::url::${url}`);
+    const pUrn = asStr(r.payload?.linkedin_message_urn);
+    if (pUrn) pendingUrns.add(pUrn);
+  }
+
+  // URNs of activities already approved into the activities table.
+  // This is the phantom-activity backstop: even if a review_queue row
+  // has been approved-and-purged, the URN still lives on the activity
+  // row and we must not re-propose it.
+  const urnCandidates = Array.from(
+    new Set(
+      proposals
+        .filter((p) => p.kind === "new_activity")
+        .map((p) => asStr(p.payload.linkedin_message_urn))
+        .filter((s): s is string => !!s),
+    ),
+  );
+  const existingActivityUrns = new Set<string>();
+  if (urnCandidates.length > 0) {
+    const { data: existingActs, error: actErr } = await supabase
+      .from("activities")
+      .select("linkedin_message_urn")
+      .in("linkedin_message_urn", urnCandidates);
+    if (actErr) {
+      return NextResponse.json({ error: actErr.message }, { status: 500 });
+    }
+    for (const r of (existingActs ?? []) as Array<{
+      linkedin_message_urn: string | null;
+    }>) {
+      if (r.linkedin_message_urn) existingActivityUrns.add(r.linkedin_message_urn);
+    }
   }
 
   // ── Build inserts + reconciliation ──
@@ -489,10 +537,45 @@ export async function POST(req: NextRequest) {
     to_status: string;
   }> = [];
   let skippedExistingProposal = 0;
+  let skippedDuplicateMessageUrn = 0;
+  // URNs claimed by earlier proposals in *this* batch. Two proposals
+  // in the same POST body that share a URN should be deduped against
+  // each other too — the first wins.
+  const seenUrnsThisBatch = new Set<string>();
 
   for (const p of proposals) {
     const lead = resolveLead(p);
     const resolvedLeadId = lead?.id ?? null;
+
+    // Phantom-activity dedupe — keyed on the stable LinkedIn message
+    // URN, never on occurred_at or any timestamp. Applies only to
+    // new_activity proposals (new_lead has no per-message identity).
+    if (p.kind === "new_activity") {
+      const urn = asStr(p.payload.linkedin_message_urn);
+      if (urn) {
+        if (
+          existingActivityUrns.has(urn) ||
+          pendingUrns.has(urn) ||
+          seenUrnsThisBatch.has(urn)
+        ) {
+          skippedDuplicateMessageUrn++;
+          continue;
+        }
+        seenUrnsThisBatch.add(urn);
+      } else {
+        // Older scrapers / mis-stamped payloads. Surface to logs so we
+        // can spot regressions in the scraper SKILL.
+        console.warn(
+          "[inbox-sync] new_activity proposal without linkedin_message_urn",
+          {
+            observed_at: observedAt,
+            linkedin_thread_id: p.linkedin_thread_id,
+            linkedin_url: p.linkedin_url,
+            lead_id: p.lead_id,
+          },
+        );
+      }
+    }
 
     // Effective payload: merge identifying fields back into payload so
     // reviewers see everything in one place.
@@ -611,7 +694,10 @@ export async function POST(req: NextRequest) {
     observed_at: observedAt,
     total: proposals.length,
     inserted: insertedIds.length,
-    skipped: { existing_proposal: skippedExistingProposal },
+    skipped: {
+      existing_proposal: skippedExistingProposal,
+      duplicate_message_urn: skippedDuplicateMessageUrn,
+    },
     inserted_ids: insertedIds,
     reconciled,
   });
