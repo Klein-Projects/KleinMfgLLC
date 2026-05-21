@@ -45,13 +45,14 @@ import { classifyLead } from "@/lib/portal/classify-lead";
 //       lead is currently invited and a DM thread exists.
 //     • stage_change contacted→engaged when the lead is currently
 //       contacted (first real inbound).
-//     • Any of the above, only if the lead's last classifier
-//       state_confidence is NULL or ≥ 0.70 (Phase 0 Decision 2).
+//   These are mechanical facts from the scraper — auto-apply does
+//   not gate on the lead's classifier state_confidence. The Phase 0
+//   Decision 2 threshold of 0.70 is for classifier OUTPUTS
+//   (conversation_state assignments), not scraper proposals.
 //
 //   QUEUE_FOR_REVIEW — written to review_queue with status='pending'.
 //                      Counts toward `queued`.
 //     • Any proposal setting status = won or status = lost.
-//     • Lead's last classifier state_confidence < 0.70.
 //     • new_lead with no matching existing lead (unknown URL).
 //     • stage_change transitions that skip funnel steps (e.g.
 //       contacted→sample_sent without engaged in between).
@@ -136,10 +137,6 @@ const VALID_ACTIVITY_TYPES = new Set([
   "web_order",
 ]);
 
-// Phase 0 Decision 2. Below this, auto-apply is suppressed and the
-// proposal is queued so Sean can disambiguate.
-const STATE_CONFIDENCE_THRESHOLD = 0.7;
-
 // Mirrors approve.ts SUMMARY_MAX — activities.summary is the short
 // preview shown in compact views, full text goes to activities.body.
 const SUMMARY_MAX = 240;
@@ -167,7 +164,6 @@ type LeadRow = {
   linkedin_thread_id: string | null;
   contact_id: string | null;
   invited_at: string | null;
-  state_confidence: number | string | null;
 };
 
 function safeEqualString(a: string, b: string): boolean {
@@ -372,18 +368,10 @@ function decideRoute(
     return "queue";
   }
 
-  // Classifier-confidence guard: when the lead's last classification
-  // was ambiguous, queue rather than compound the ambiguity. NULL
-  // (never classified) does not block — first auto-apply gets the
-  // classifier running.
-  if (lead && lead.state_confidence != null) {
-    const conf = typeof lead.state_confidence === "number"
-      ? lead.state_confidence
-      : Number(lead.state_confidence);
-    if (Number.isFinite(conf) && conf < STATE_CONFIDENCE_THRESHOLD) {
-      return "queue";
-    }
-  }
+  // No state_confidence gate here — these are mechanical facts (a
+  // message exists, a thread is now accepted), not classifier
+  // judgments. The 0.70 threshold belongs on classifier-output write
+  // paths, not on scraper-proposal routing.
   return "auto_apply";
 }
 
@@ -608,7 +596,7 @@ export async function POST(req: NextRequest) {
   );
 
   const LEAD_COLS =
-    "id, status, linkedin_url, linkedin_thread_id, contact_id, invited_at, state_confidence";
+    "id, status, linkedin_url, linkedin_thread_id, contact_id, invited_at";
 
   const leadsByThread = new Map<string, LeadRow>();
   const leadsByUrl = new Map<string, LeadRow>();

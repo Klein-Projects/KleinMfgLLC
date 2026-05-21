@@ -356,13 +356,15 @@ proposal is routed to one of two paths:
 - **AUTO_APPLY** — applied directly to `activities` / `leads` and
   never seen in the review queue. Covers routine new_activity to a
   known lead, invited→contacted/engaged on first DM, and
-  contacted→engaged on first inbound. Suppressed when the lead's
-  last classifier `state_confidence` is below 0.70.
+  contacted→engaged on first inbound. These are mechanical facts
+  from the scraper, so routing does NOT gate on the lead's classifier
+  `state_confidence` — the 0.70 threshold (Phase 0 Decision 2) is for
+  classifier outputs, not scraper proposals.
 - **QUEUE_FOR_REVIEW** — `review_queue` with `status='pending'`,
   surfaced on `/portal/review-queue`. Covers won/lost transitions,
-  unknown-URL new_leads, funnel-skipping stage_changes, and any
-  proposal whose auto-apply attempt threw (payload gets
-  `auto_apply_error` for context).
+  unknown-URL new_leads, funnel-skipping stage_changes,
+  `update_contact`, `set_wake_up`, and any proposal whose auto-apply
+  attempt threw (payload gets `auto_apply_error` for context).
 
 ### Auth
 
