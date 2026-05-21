@@ -347,12 +347,22 @@ Cookie session.
 
 ---
 
-## `POST /api/inbox-sync` — Phase 2
+## `POST /api/inbox-sync` — Phase 2 + Phase 5 (Part A)
 
 Cowork-facing write endpoint. The 7am LinkedIn DM scraper posts a
-batch of proposals derived from walking Sean's DM inbox. Every
-proposal lands in `review_queue` with `status='pending'` — never
-auto-applied. Sean approves from `/portal/review-queue`.
+batch of proposals derived from walking Sean's DM inbox. Each
+proposal is routed to one of two paths:
+
+- **AUTO_APPLY** — applied directly to `activities` / `leads` and
+  never seen in the review queue. Covers routine new_activity to a
+  known lead, invited→contacted/engaged on first DM, and
+  contacted→engaged on first inbound. Suppressed when the lead's
+  last classifier `state_confidence` is below 0.70.
+- **QUEUE_FOR_REVIEW** — `review_queue` with `status='pending'`,
+  surfaced on `/portal/review-queue`. Covers won/lost transitions,
+  unknown-URL new_leads, funnel-skipping stage_changes, and any
+  proposal whose auto-apply attempt threw (payload gets
+  `auto_apply_error` for context).
 
 ### Auth
 
@@ -436,7 +446,9 @@ accepted — the approve endpoint uses it to drop the lead into the
 ### Side effect
 
 Every resolved lead gets `last_inbox_sync_at = observed_at` so the
-next scrape can pull incrementally.
+next scrape can pull incrementally. The Haiku conversation-state
+classifier runs once per lead that had a new_activity auto-applied;
+classifier failures are logged but never roll back the activity.
 
 ### Response — `200 OK`
 
@@ -444,9 +456,26 @@ next scrape can pull incrementally.
 {
   "observed_at": "2026-05-09T07:00:00-07:00",
   "total": 12,
-  "inserted": 9,
-  "skipped": { "existing_proposal": 3 },
-  "inserted_ids": ["uuid", "uuid", ...],
+  "auto_applied": 6,
+  "queued": 3,
+  "skipped": {
+    "existing_proposal": 2,
+    "duplicate_message_urn": 1
+  },
+  "queued_ids": ["uuid", "uuid", ...],
+  "auto_applied_details": [
+    {
+      "kind": "new_activity",
+      "lead_id": "uuid",
+      "activity_id": "uuid"
+    },
+    {
+      "kind": "stage_change",
+      "lead_id": "uuid",
+      "from_status": "invited",
+      "to_status": "engaged"
+    }
+  ],
   "reconciled": [
     {
       "source_kind": "new_activity",

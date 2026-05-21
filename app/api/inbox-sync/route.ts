@@ -1,56 +1,85 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { classifyLead } from "@/lib/portal/classify-lead";
 
-// POST /api/inbox-sync — Phase 2
+// POST /api/inbox-sync — Phase 2 + Phase 5 (Part A)
 //
 // Cowork-facing write endpoint. Hit by the 7am LinkedIn DM scraper
 // task with a batch of proposals derived from walking Sean's DM
-// inbox. Every proposal lands in review_queue with status='pending'
-// — never auto-applied. Sean approves from /portal/review-queue.
-//
-// Body shape:
+// inbox. Body shape:
 // {
 //   observed_at: string (ISO datetime),
 //   proposals: [
 //     {
 //       kind: "new_lead" | "new_activity" | "stage_change"
 //           | "update_contact" | "set_wake_up",
-//       lead_id?:            string | null,    // optional — endpoint resolves
+//       lead_id?:            string | null,
 //       linkedin_thread_id?: string | null,
-//       linkedin_url?:       string | null,    // for matching when lead_id absent
+//       linkedin_url?:       string | null,
 //       payload:             Record<string, unknown>,
 //     },
 //     ...
 //   ]
 // }
 //
-// Reconciliation (the headline Phase 2 behaviour):
+// Reconciliation (Phase 2):
 //   1. For every proposal, try to resolve a target lead. Match order:
 //      lead_id → linkedin_thread_id (lead-level) → linkedin_url
 //      (lead-level) → linkedin_url (contact-level).
 //   2. When a proposal of kind 'new_lead' or 'new_activity' resolves
 //      to a lead with status='invited', the endpoint synthesizes an
 //      additional kind='stage_change' proposal advancing the lead
-//      from 'invited' to 'contacted' (when the first DM message is
-//      outbound from us, treat as still contacted) or 'engaged' (when
-//      the first DM message is inbound from the prospect — they
-//      replied, that's engagement).
-//   3. When a 'new_lead' proposal resolves to an existing non-invited
-//      lead, demote it to a 'new_activity' proposal so we don't
-//      double-create. The original payload is preserved on the row.
+//      from 'invited' to 'contacted' (outbound first message) or
+//      'engaged' (inbound first message).
+//   3. When a 'new_lead' proposal resolves to an existing lead, demote
+//      it to a 'new_activity' proposal so we don't double-create. The
+//      original payload is preserved with `demoted_from: "new_lead"`.
 //
-// Dedupe: skip pending proposals that already exist for the same
-// (kind, linkedin_thread_id) tuple, or for new_lead by linkedin_url
-// when no thread_id is available.
+// Routing (Phase 5 Part A, auto-apply):
+//   Every proposal is routed to one of two paths:
 //
-// Phantom-activity backstop: for new_activity proposals carrying a
-// stable LinkedIn message URN (payload.linkedin_message_urn), skip
-// the proposal entirely when either (a) an activities row already
-// exists with that urn — the message was approved on a prior run,
-// or (b) a pending review_queue row already carries the same urn —
-// it's waiting for Sean's decision. Keyed on the URN, never on
-// occurred_at or any timestamp. The unique partial index on
-// activities.linkedin_message_urn is the database-level backstop.
+//   AUTO_APPLY — applied directly to activities / leads, never lands
+//                in review_queue. Counts toward `auto_applied`.
+//     • new_activity to a known (matched) lead, any direction.
+//     • stage_change invited→contacted or invited→engaged when the
+//       lead is currently invited and a DM thread exists.
+//     • stage_change contacted→engaged when the lead is currently
+//       contacted (first real inbound).
+//     • Any of the above, only if the lead's last classifier
+//       state_confidence is NULL or ≥ 0.70 (Phase 0 Decision 2).
+//
+//   QUEUE_FOR_REVIEW — written to review_queue with status='pending'.
+//                      Counts toward `queued`.
+//     • Any proposal setting status = won or status = lost.
+//     • Lead's last classifier state_confidence < 0.70.
+//     • new_lead with no matching existing lead (unknown URL).
+//     • stage_change transitions that skip funnel steps (e.g.
+//       contacted→sample_sent without engaged in between).
+//     • update_contact, set_wake_up (safe default — not in the
+//       AUTO_APPLY allow-list).
+//     • Any proposal whose auto-apply attempt threw — falls back
+//       to queueing with `auto_apply_error` annotation on payload.
+//
+// Dedupe (applies to both routes):
+//   - Skip pending review_queue rows that already exist for the same
+//     (kind, linkedin_thread_id) or (kind, linkedin_url when no
+//     thread_id). Counted as skipped.existing_proposal.
+//   - Phantom-activity backstop on new_activity: skip if
+//     payload.linkedin_message_urn already exists on an activities
+//     row, a pending review_queue row, OR was claimed by an earlier
+//     proposal in this batch. Counted as skipped.duplicate_message_urn.
+//   - The unique partial index on activities.linkedin_message_urn is
+//     the DB-level backstop and is honored by the auto-apply path too
+//     (23505 unique_violation → fold into existing row).
+//
+// Classifier hook:
+//   After every new_activity that becomes a real activities row —
+//   whether via auto-apply here or via /api/review-queue/[id]/approve
+//   — the Haiku conversation-state classifier (lib/portal/classify-lead)
+//   runs for that lead. To keep the historical-sweep cost bounded, the
+//   auto-apply path runs the classifier once per lead per batch, after
+//   all activity inserts complete. Best-effort: a classifier failure
+//   is logged but does NOT roll back the approved activities.
 //
 // Side effect: bumps leads.last_inbox_sync_at on every resolved lead
 // so the next scrape can fetch incrementally.
@@ -58,9 +87,16 @@ import { createClient } from "@supabase/supabase-js";
 // Auth: Bearer token (COWORK_API_TOKEN env var). Service-role
 // Supabase client; bypasses RLS.
 //
-// Returns 200 with { observed_at, total, inserted, skipped:
-// { existing_proposal, duplicate_message_urn }, inserted_ids[],
-// reconciled[] }.
+// Returns 200 with {
+//   observed_at,
+//   total,
+//   auto_applied,
+//   queued,
+//   skipped: { existing_proposal, duplicate_message_urn },
+//   queued_ids[],          // inserted review_queue row ids
+//   auto_applied_details[],// per-auto-apply outcome
+//   reconciled[],          // synthesized invited→{contacted,engaged}
+// }.
 
 type ProposalKind =
   | "new_lead"
@@ -77,6 +113,37 @@ const VALID_KINDS: readonly ProposalKind[] = [
   "set_wake_up",
 ];
 
+const VALID_LEAD_STATUSES = new Set([
+  "new",
+  "invited",
+  "contacted",
+  "engaged",
+  "sample_sent",
+  "quoted",
+  "won",
+  "lost",
+  "nurture",
+]);
+
+const VALID_ACTIVITY_TYPES = new Set([
+  "linkedin_message",
+  "connection_request",
+  "email",
+  "phone",
+  "note",
+  "sample_sent",
+  "follow_up",
+  "web_order",
+]);
+
+// Phase 0 Decision 2. Below this, auto-apply is suppressed and the
+// proposal is queued so Sean can disambiguate.
+const STATE_CONFIDENCE_THRESHOLD = 0.7;
+
+// Mirrors approve.ts SUMMARY_MAX — activities.summary is the short
+// preview shown in compact views, full text goes to activities.body.
+const SUMMARY_MAX = 240;
+
 interface ProposalInput {
   kind: ProposalKind;
   lead_id?: string | null;
@@ -92,6 +159,16 @@ interface RowToInsert {
   lead_id: string | null;
   linkedin_thread_id: string | null;
 }
+
+type LeadRow = {
+  id: string;
+  status: string;
+  linkedin_url: string | null;
+  linkedin_thread_id: string | null;
+  contact_id: string | null;
+  invited_at: string | null;
+  state_confidence: number | string | null;
+};
 
 function safeEqualString(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -120,6 +197,11 @@ function asStr(v: unknown): string | null {
   if (typeof v !== "string") return null;
   const t = v.trim();
   return t === "" ? null : t;
+}
+
+function truncate(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1).trimEnd() + "…";
 }
 
 // Short preview shown in compact contexts (Today queue, dashboards).
@@ -162,8 +244,6 @@ function validateProposal(
   const linkedinUrlRaw = o.linkedin_url ?? (payload as Record<string, unknown>).linkedin_url;
   const linkedinUrl = asStr(linkedinUrlRaw);
 
-  // Per-kind required fields. Lightweight — we want flexibility in payload
-  // shape for the scraper, but a stage_change with no target is useless.
   if (kind === "stage_change") {
     const toStatus = asStr((payload as Record<string, unknown>).to_status);
     if (!toStatus) {
@@ -186,11 +266,6 @@ function validateProposal(
         error: `proposal[${index}] new_activity needs lead_id, linkedin_thread_id, or linkedin_url`,
       };
     }
-    // Conversation-aware capture: scraper may send the full message
-    // body so /portal/leads/[id] can render it verbatim. We accept it
-    // at the top of the proposal OR inside payload; canonicalize to
-    // payload.body and auto-derive payload.summary as a short preview
-    // when only a body was supplied.
     const bodyRaw = o.body ?? (payload as Record<string, unknown>).body;
     const body = asStr(bodyRaw);
     const p = payload as Record<string, unknown>;
@@ -198,8 +273,6 @@ function validateProposal(
     if (body && !asStr(p.summary)) {
       p.summary = previewFromBody(body);
     }
-    // Stable per-message LinkedIn URN. Phantom-activity dedupe key.
-    // Accept it at the top of the proposal OR inside payload.
     const urnRaw = o.linkedin_message_urn ?? p.linkedin_message_urn;
     const urn = asStr(urnRaw);
     if (urn) p.linkedin_message_urn = urn;
@@ -219,9 +292,6 @@ function validateProposal(
         error: `proposal[${index}] set_wake_up needs lead_id, linkedin_thread_id, or linkedin_url`,
       };
     }
-    // Used by the deep historical sweep to park long-cold leads. The
-    // payload must spell out the wake-up target so a reviewer can
-    // see at a glance how long the proposal would shelve the lead.
     const rawWake = (payload as Record<string, unknown>).wake_up_at;
     if (rawWake === null) {
       // Explicit unpark proposal — fine.
@@ -264,15 +334,181 @@ function validateProposal(
   };
 }
 
-// Decide which to_status a stage_change should propose when the
-// scraper finds an invited lead's thread in DMs. Inbound first
-// message means the prospect actually replied → 'engaged'; outbound
-// means we sent them a follow-up after they accepted but they
-// haven't said anything back yet → 'contacted'.
 function reconcileTargetStatus(payload: Record<string, unknown>): "contacted" | "engaged" {
   const dir = asStr(payload.first_message_direction);
   if (dir === "inbound") return "engaged";
   return "contacted";
+}
+
+// ── Routing ────────────────────────────────────────────────────────────
+//
+// Decide whether an (effectiveKind, payload, lead) tuple is safe to
+// auto-apply or should land in review_queue. Pure function — no I/O.
+function decideRoute(
+  kind: ProposalKind,
+  payload: Record<string, unknown>,
+  lead: LeadRow | null,
+): "auto_apply" | "queue" {
+  // Hard queue: any deal-closing transition. Sean confirms by hand.
+  if (kind === "stage_change") {
+    const toStatus = asStr(payload.to_status);
+    if (toStatus === "won" || toStatus === "lost") return "queue";
+    if (!lead) return "queue";
+    const cur = lead.status;
+    const ok =
+      (cur === "invited" && (toStatus === "contacted" || toStatus === "engaged")) ||
+      (cur === "contacted" && toStatus === "engaged");
+    if (!ok) return "queue"; // unknown / skips funnel steps
+  } else if (kind === "new_activity") {
+    if (!lead) return "queue";
+    const type = asStr(payload.type) ?? "linkedin_message";
+    if (!VALID_ACTIVITY_TYPES.has(type)) return "queue";
+  } else if (kind === "new_lead") {
+    // Reached only when the lead is unmatched — a matched new_lead
+    // is demoted to new_activity upstream. Truly-new leads queue.
+    return "queue";
+  } else {
+    // update_contact, set_wake_up — not on the AUTO_APPLY allow-list.
+    return "queue";
+  }
+
+  // Classifier-confidence guard: when the lead's last classification
+  // was ambiguous, queue rather than compound the ambiguity. NULL
+  // (never classified) does not block — first auto-apply gets the
+  // classifier running.
+  if (lead && lead.state_confidence != null) {
+    const conf = typeof lead.state_confidence === "number"
+      ? lead.state_confidence
+      : Number(lead.state_confidence);
+    if (Number.isFinite(conf) && conf < STATE_CONFIDENCE_THRESHOLD) {
+      return "queue";
+    }
+  }
+  return "auto_apply";
+}
+
+// ── Auto-apply: new_activity ───────────────────────────────────────────
+//
+// Mirrors the new_activity branch of /api/review-queue/[id]/approve so
+// auto-applied activities are indistinguishable from approved ones in
+// the activities table. Caller is responsible for triggering the
+// classifier post-batch.
+async function applyNewActivity(
+  supabase: SupabaseClient,
+  lead: LeadRow,
+  payload: Record<string, unknown>,
+  threadId: string | null,
+): Promise<{ activity_id: string; lead_id: string }> {
+  const type = asStr(payload.type) ?? "linkedin_message";
+  const body = asStr(payload.body);
+  const summary =
+    asStr(payload.summary) ??
+    asStr(payload.first_message_excerpt) ??
+    asStr(payload.message_excerpt) ??
+    (body ? body : "Logged from DM scraper");
+  const direction =
+    asStr(payload.direction) === "inbound" ? "inbound" : "outbound";
+  const occurredAt =
+    asStr(payload.occurred_at) ??
+    asStr(payload.first_message_at) ??
+    asStr(payload.observed_at);
+
+  const insert: Record<string, unknown> = {
+    lead_id: lead.id,
+    type,
+    summary: truncate(summary, SUMMARY_MAX),
+    direction,
+    source: "dm_inbox_scraper",
+  };
+  if (body) insert.body = body;
+  if (occurredAt) insert.created_at = occurredAt;
+  const messageUrn = asStr(payload.linkedin_message_urn);
+  if (messageUrn) insert.linkedin_message_urn = messageUrn;
+
+  // 23505 (unique_violation) backstop: the partial unique index on
+  // activities.linkedin_message_urn means a racing concurrent insert
+  // for the same URN will raise. Fold into the existing row instead
+  // of failing the whole proposal.
+  const insertRes = await supabase
+    .from("activities")
+    .insert(insert)
+    .select("id")
+    .single();
+  let activity = insertRes.data as { id: string } | null;
+  const insertErr = insertRes.error as { code?: string; message: string } | null;
+  if (insertErr) {
+    if (messageUrn && insertErr.code === "23505") {
+      const { data: existing } = await supabase
+        .from("activities")
+        .select("id")
+        .eq("linkedin_message_urn", messageUrn)
+        .limit(1)
+        .maybeSingle();
+      activity = (existing as { id: string } | null) ?? null;
+      if (!activity) {
+        throw new Error(
+          "Duplicate linkedin_message_urn but existing row not found",
+        );
+      }
+    } else {
+      throw new Error(insertErr.message);
+    }
+  }
+  if (!activity) throw new Error("Failed to insert activity");
+
+  const leadUpdates: Record<string, unknown> = {
+    last_activity_at: new Date().toISOString(),
+  };
+  if (threadId && !lead.linkedin_thread_id) {
+    leadUpdates.linkedin_thread_id = threadId;
+  }
+  await supabase.from("leads").update(leadUpdates).eq("id", lead.id);
+  if (threadId && !lead.linkedin_thread_id) {
+    lead.linkedin_thread_id = threadId;
+  }
+
+  return { activity_id: activity.id, lead_id: lead.id };
+}
+
+// ── Auto-apply: stage_change ───────────────────────────────────────────
+async function applyStageChange(
+  supabase: SupabaseClient,
+  lead: LeadRow,
+  payload: Record<string, unknown>,
+  threadId: string | null,
+): Promise<{ lead_id: string; from_status: string; to_status: string }> {
+  const toStatus = asStr(payload.to_status);
+  if (!toStatus || !VALID_LEAD_STATUSES.has(toStatus)) {
+    throw new Error(`Invalid to_status: ${toStatus}`);
+  }
+
+  const updates: Record<string, unknown> = {
+    status: toStatus,
+    last_activity_at: new Date().toISOString(),
+  };
+  const setAccepted = asStr(payload.set_connection_accepted_at);
+  if (setAccepted) {
+    updates.connection_accepted_at = setAccepted;
+  } else if (
+    lead.status === "invited" &&
+    (toStatus === "contacted" || toStatus === "engaged")
+  ) {
+    updates.connection_accepted_at = new Date().toISOString();
+  }
+  if (threadId && !lead.linkedin_thread_id) {
+    updates.linkedin_thread_id = threadId;
+  }
+
+  const { error: updErr } = await supabase
+    .from("leads")
+    .update(updates)
+    .eq("id", lead.id);
+  if (updErr) throw new Error(updErr.message);
+
+  const fromStatus = lead.status;
+  lead.status = toStatus;
+  if (threadId && !lead.linkedin_thread_id) lead.linkedin_thread_id = threadId;
+  return { lead_id: lead.id, from_status: fromStatus, to_status: toStatus };
 }
 
 export async function POST(req: NextRequest) {
@@ -343,17 +579,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       observed_at: observedAt,
       total: 0,
-      inserted: 0,
+      auto_applied: 0,
+      queued: 0,
       skipped: { existing_proposal: 0, duplicate_message_urn: 0 },
-      inserted_ids: [],
+      queued_ids: [],
+      auto_applied_details: [],
       reconciled: [],
     });
   }
 
   // ── Resolve target leads in bulk ──
-  // Collect every key the scraper could match against and look up each
-  // in one query. We intentionally trust lead_id when set (the scraper
-  // knows from a previous run); otherwise we walk thread_id then URL.
   const threadIds = Array.from(
     new Set(
       proposals
@@ -372,23 +607,17 @@ export async function POST(req: NextRequest) {
     ),
   );
 
-  type LeadRow = {
-    id: string;
-    status: string;
-    linkedin_url: string | null;
-    linkedin_thread_id: string | null;
-    contact_id: string | null;
-  };
+  const LEAD_COLS =
+    "id, status, linkedin_url, linkedin_thread_id, contact_id, invited_at, state_confidence";
 
   const leadsByThread = new Map<string, LeadRow>();
   const leadsByUrl = new Map<string, LeadRow>();
   const leadsById = new Map<string, LeadRow>();
 
-  // 1) explicit lead_ids
   if (explicitLeadIds.length > 0) {
     const { data, error } = await supabase
       .from("leads")
-      .select("id, status, linkedin_url, linkedin_thread_id, contact_id")
+      .select(LEAD_COLS)
       .in("id", explicitLeadIds);
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -400,11 +629,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 2) thread_ids
   if (threadIds.length > 0) {
     const { data, error } = await supabase
       .from("leads")
-      .select("id, status, linkedin_url, linkedin_thread_id, contact_id")
+      .select(LEAD_COLS)
       .in("linkedin_thread_id", threadIds);
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -416,11 +644,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 3) lead-level URLs
   if (urls.length > 0) {
     const { data, error } = await supabase
       .from("leads")
-      .select("id, status, linkedin_url, linkedin_thread_id, contact_id")
+      .select(LEAD_COLS)
       .in("linkedin_url", urls);
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -436,12 +663,11 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 4) contact-level URLs (fallback for leads where the URL only lives on contacts)
   if (urls.length > 0) {
     const { data, error } = await supabase
       .from("contacts")
       .select(
-        "id, linkedin_url, leads:leads(id, status, linkedin_url, linkedin_thread_id, contact_id)",
+        `id, linkedin_url, leads:leads(${LEAD_COLS})`,
       )
       .in("linkedin_url", urls);
     if (error) {
@@ -484,9 +710,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: pendingErr.message }, { status: 500 });
   }
   const dedupeKeys = new Set<string>();
-  // URN-keyed dedupe set: every pending review_queue row that already
-  // carries a linkedin_message_urn. Catches the case where the scraper
-  // re-emits a message that hasn't been approved yet.
   const pendingUrns = new Set<string>();
   for (const r of (existingPending ?? []) as Array<{
     kind: string;
@@ -500,10 +723,6 @@ export async function POST(req: NextRequest) {
     if (pUrn) pendingUrns.add(pUrn);
   }
 
-  // URNs of activities already approved into the activities table.
-  // This is the phantom-activity backstop: even if a review_queue row
-  // has been approved-and-purged, the URN still lives on the activity
-  // row and we must not re-propose it.
   const urnCandidates = Array.from(
     new Set(
       proposals
@@ -536,20 +755,80 @@ export async function POST(req: NextRequest) {
     from_status: string;
     to_status: string;
   }> = [];
+  const autoAppliedDetails: Array<{
+    kind: ProposalKind;
+    lead_id: string;
+    activity_id?: string;
+    from_status?: string;
+    to_status?: string;
+  }> = [];
+  // Leads whose new_activity got auto-applied — we run the Haiku
+  // classifier exactly once per lead after the batch finishes.
+  const classifierLeadIds = new Set<string>();
+  let autoAppliedCount = 0;
   let skippedExistingProposal = 0;
   let skippedDuplicateMessageUrn = 0;
-  // URNs claimed by earlier proposals in *this* batch. Two proposals
-  // in the same POST body that share a URN should be deduped against
-  // each other too — the first wins.
   const seenUrnsThisBatch = new Set<string>();
+
+  // Inline helper that routes one (effectiveKind, payload, lead) tuple.
+  // Tries auto-apply when decideRoute allows; on any auto-apply error
+  // falls back to queueing the proposal with `auto_apply_error` set on
+  // the payload so Sean can see what happened.
+  async function routeAndApply(
+    effectiveKind: ProposalKind,
+    effectivePayload: Record<string, unknown>,
+    lead: LeadRow | null,
+    threadIdForApply: string | null,
+  ): Promise<"auto_applied" | "queued"> {
+    const route = decideRoute(effectiveKind, effectivePayload, lead);
+    if (route === "auto_apply" && lead) {
+      try {
+        if (effectiveKind === "new_activity") {
+          const r = await applyNewActivity(supabase, lead, effectivePayload, threadIdForApply);
+          autoAppliedDetails.push({
+            kind: effectiveKind,
+            lead_id: r.lead_id,
+            activity_id: r.activity_id,
+          });
+          classifierLeadIds.add(r.lead_id);
+        } else if (effectiveKind === "stage_change") {
+          const r = await applyStageChange(supabase, lead, effectivePayload, threadIdForApply);
+          autoAppliedDetails.push({
+            kind: effectiveKind,
+            lead_id: r.lead_id,
+            from_status: r.from_status,
+            to_status: r.to_status,
+          });
+        } else {
+          // decideRoute should never return auto_apply for other kinds.
+          throw new Error(`Auto-apply unsupported for kind=${effectiveKind}`);
+        }
+        autoAppliedCount++;
+        return "auto_applied";
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : "auto-apply failed";
+        console.error("[inbox-sync] auto-apply failed, queueing", {
+          kind: effectiveKind,
+          lead_id: lead.id,
+          error: msg,
+        });
+        effectivePayload.auto_apply_error = msg;
+      }
+    }
+    rowsToInsert.push({
+      kind: effectiveKind,
+      source: "linkedin_dm_scraper",
+      payload: effectivePayload,
+      lead_id: lead?.id ?? null,
+      linkedin_thread_id: threadIdForApply,
+    });
+    return "queued";
+  }
 
   for (const p of proposals) {
     const lead = resolveLead(p);
-    const resolvedLeadId = lead?.id ?? null;
 
-    // Phantom-activity dedupe — keyed on the stable LinkedIn message
-    // URN, never on occurred_at or any timestamp. Applies only to
-    // new_activity proposals (new_lead has no per-message identity).
+    // Phantom-activity dedupe (URN-keyed). Skips before any side effect.
     if (p.kind === "new_activity") {
       const urn = asStr(p.payload.linkedin_message_urn);
       if (urn) {
@@ -563,8 +842,6 @@ export async function POST(req: NextRequest) {
         }
         seenUrnsThisBatch.add(urn);
       } else {
-        // Older scrapers / mis-stamped payloads. Surface to logs so we
-        // can spot regressions in the scraper SKILL.
         console.warn(
           "[inbox-sync] new_activity proposal without linkedin_message_urn",
           {
@@ -577,8 +854,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Effective payload: merge identifying fields back into payload so
-    // reviewers see everything in one place.
     const effectivePayload: Record<string, unknown> = {
       ...p.payload,
       observed_at: observedAt,
@@ -592,16 +867,11 @@ export async function POST(req: NextRequest) {
     if (lead?.status) effectivePayload.matched_lead_status = lead.status;
 
     let effectiveKind: ProposalKind = p.kind;
-
-    // Demote new_lead → new_activity when the lead already exists and
-    // is past the invited stage. The scraper didn't know there was a
-    // matching lead; we do, so we don't double-create.
     if (effectiveKind === "new_lead" && lead) {
       effectiveKind = "new_activity";
       effectivePayload.demoted_from = "new_lead";
     }
 
-    // Dedupe key (per-kind, scoped by thread_id when available, else URL).
     const dedupeTid = p.linkedin_thread_id;
     const dedupeUrl = p.linkedin_url;
     const dedupeKey = dedupeTid
@@ -614,19 +884,19 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    rowsToInsert.push({
-      kind: effectiveKind,
-      source: "linkedin_dm_scraper",
-      payload: effectivePayload,
-      lead_id: resolvedLeadId,
-      linkedin_thread_id: p.linkedin_thread_id ?? null,
-    });
+    await routeAndApply(
+      effectiveKind,
+      effectivePayload,
+      lead,
+      p.linkedin_thread_id ?? null,
+    );
     if (dedupeKey) dedupeKeys.add(dedupeKey);
 
-    // Invited-lead reconciliation: synthesize a stage_change proposal
-    // when the matched lead is currently 'invited' and the scraper-
-    // sourced kind is new_lead/new_activity (i.e. an actual DM thread,
-    // not a wake-up tweak). Do this once per lead per batch.
+    // Invited-lead reconciliation: synthesize a stage_change when the
+    // matched lead is currently 'invited' and the scraper-sourced kind
+    // is new_lead/new_activity. The synthetic stage_change goes through
+    // the same routing — for the invited→contacted/engaged case it
+    // auto-applies, otherwise it queues.
     if (
       lead &&
       lead.status === "invited" &&
@@ -635,21 +905,21 @@ export async function POST(req: NextRequest) {
       const toStatus = reconcileTargetStatus(effectivePayload);
       const stageDedupeKey = `stage_change::lid::${lead.id}::to::${toStatus}`;
       if (!dedupeKeys.has(stageDedupeKey)) {
-        rowsToInsert.push({
-          kind: "stage_change",
-          source: "linkedin_dm_scraper",
-          payload: {
-            from_status: "invited",
-            to_status: toStatus,
-            reconciled_from: "invited_thread_match",
-            linkedin_thread_id: p.linkedin_thread_id ?? null,
-            linkedin_url: p.linkedin_url ?? null,
-            observed_at: observedAt,
-            set_connection_accepted_at: observedAt,
-          },
-          lead_id: lead.id,
+        const stagePayload: Record<string, unknown> = {
+          from_status: "invited",
+          to_status: toStatus,
+          reconciled_from: "invited_thread_match",
           linkedin_thread_id: p.linkedin_thread_id ?? null,
-        });
+          linkedin_url: p.linkedin_url ?? null,
+          observed_at: observedAt,
+          set_connection_accepted_at: observedAt,
+        };
+        await routeAndApply(
+          "stage_change",
+          stagePayload,
+          lead,
+          p.linkedin_thread_id ?? null,
+        );
         dedupeKeys.add(stageDedupeKey);
         reconciled.push({
           source_kind: p.kind,
@@ -661,7 +931,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── Insert ──
+  // ── Insert queued rows into review_queue ──
   let insertedIds: string[] = [];
   if (rowsToInsert.length > 0) {
     const { data: inserted, error: insErr } = await supabase
@@ -674,10 +944,19 @@ export async function POST(req: NextRequest) {
     insertedIds = (inserted ?? []).map((r) => r.id as string);
   }
 
+  // ── Classifier hook (auto-apply path) ──
+  // Once per lead per batch — see header comment. Failures are logged
+  // but do NOT roll back the auto-applied activities.
+  for (const leadId of Array.from(classifierLeadIds)) {
+    try {
+      await classifyLead(supabase, leadId);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "classify failed";
+      console.error("[inbox-sync] classifier failed for lead", { leadId, error: msg });
+    }
+  }
+
   // ── Stamp last_inbox_sync_at on every resolved lead ──
-  // Drives the next scrape's "newer than X" filter. Best-effort —
-  // if it fails, we still return inserted_ids so the scraper run
-  // isn't lost.
   const resolvedLeadIds = new Set<string>();
   for (const p of proposals) {
     const lead = resolveLead(p);
@@ -693,12 +972,14 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     observed_at: observedAt,
     total: proposals.length,
-    inserted: insertedIds.length,
+    auto_applied: autoAppliedCount,
+    queued: insertedIds.length,
     skipped: {
       existing_proposal: skippedExistingProposal,
       duplicate_message_urn: skippedDuplicateMessageUrn,
     },
-    inserted_ids: insertedIds,
+    queued_ids: insertedIds,
+    auto_applied_details: autoAppliedDetails,
     reconciled,
   });
 }
