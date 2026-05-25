@@ -11,6 +11,7 @@ const stageLabels: Record<string, string> = {
   engaged: "Engaged",
   sample_sent: "Sample Sent",
   quoted: "Quoted",
+  pending_ship: "Pending Shipment",
   won: "Won",
   lost: "Lost",
   nurture: "Nurture",

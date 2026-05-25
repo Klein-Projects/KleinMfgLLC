@@ -242,6 +242,73 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ── Paid-order only: auto-promote linked lead to 'won' ─────────────────
+  // The Stripe webhook auto-attributes paid orders to a lead at
+  // status='pending_ship'. Shipping the order closes the deal: flip the
+  // lead to 'won' and stamp closed_won_at so it lights up the dashboard
+  // "Wins This Year" tile. Samples don't promote (they're not deals).
+  // Best-effort: a CRM hiccup must not block the customer email.
+  if (!order.is_sample && order.customer_email) {
+    try {
+      const { data: contact } = await supabase
+        .from("contacts")
+        .select("id")
+        .ilike("email", order.customer_email)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (contact?.id) {
+        const { data: lead } = await supabase
+          .from("leads")
+          .select("id, status")
+          .eq("contact_id", contact.id)
+          .not("status", "in", "(won,lost)")
+          .order("last_activity_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (lead?.id) {
+          const wonAt = shippedAt;
+          const { error: promoteErr } = await supabase
+            .from("leads")
+            .update({
+              status: "won",
+              closed_won_at: wonAt,
+              last_activity_at: wonAt,
+            })
+            .eq("id", lead.id);
+
+          if (promoteErr) {
+            console.error(
+              "[mark-shipped] lead won-promotion failed:",
+              promoteErr
+            );
+          } else {
+            await supabase.from("activities").insert({
+              lead_id: lead.id,
+              type: "note",
+              summary: `Auto-marked won: order shipped (tracking ${order.tracking_code}).`,
+              outcome: "auto_won_on_ship",
+            });
+          }
+        } else {
+          console.warn(
+            `[mark-shipped] no open lead found for ${order.customer_email}; ` +
+              `won-promotion skipped.`
+          );
+        }
+      } else {
+        console.warn(
+          `[mark-shipped] no contact found for ${order.customer_email}; ` +
+            `won-promotion skipped.`
+        );
+      }
+    } catch (promoteErr) {
+      console.error("[mark-shipped] won-promotion exception:", promoteErr);
+    }
+  }
+
   // ── Send tracking email (non-blocking) ───────────────────────────────
   const trackingUrl = `https://www.ups.com/track?tracknum=${encodeURIComponent(
     order.tracking_code

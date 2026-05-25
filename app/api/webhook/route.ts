@@ -3,6 +3,7 @@ import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
 import { lookupActiveDiscount, resolveUnitPrices } from "@/lib/discount";
 import { getListPrices } from "@/lib/settings";
+import { attributeInboundToCrm } from "@/lib/portal/crm-attribution";
 
 const CC_FEE_RATE = 0.0309;
 
@@ -196,19 +197,49 @@ export async function POST(request: Request) {
     console.error("Stripe webhook: Supabase exception:", dbErr);
   }
 
-  // ── Step 4b: Auto-attribute the order to the CRM (Phase 15K) ──
+  // ── Step 4b: Auto-attribute the order to the CRM ──
+  //   Match-first (discount → email → contact). If no match,
+  //   auto-create company + contact + lead at status='pending_ship'.
+  //   mark-shipped later promotes the lead to 'won' + stamps closed_won_at.
   if (insertedOrderId && !isDuplicate) {
     try {
-      await attributeOrderToCrm({
-        orderId: insertedOrderId,
+      const orderSummary =
+        `Web order: ${q6}× 6", ${q11}× 11" — ${formatUSD(totalCents)}` +
+        (appliedDiscountCode ? ` (code ${appliedDiscountCode})` : "");
+
+      const supabaseForAttr = getSupabaseAdmin();
+      const attrResult = await attributeInboundToCrm({
+        supabase: supabaseForAttr,
         customerEmail,
         customerName,
-        discountCompanyId,
-        appliedDiscountCode,
-        q6,
-        q11,
-        totalCents,
+        customerPhone: customerPhone || null,
+        companyName: companyName || null,
+        source: {
+          kind: "paid_order",
+          orderId: insertedOrderId,
+          discountCompanyId,
+          appliedDiscountCode,
+        },
+        activitySummary: orderSummary,
       });
+
+      if (!attrResult.ok) {
+        // No email or DB failure — fall back to the manual web_order_review
+        // queue so the order is still visible in the portal.
+        console.warn(
+          `Stripe webhook: attribution failed for order ${insertedOrderId} (${attrResult.reason}); queuing for manual review.`
+        );
+        const { error: qErr } = await supabaseForAttr
+          .from("web_order_review")
+          .insert({ order_id: insertedOrderId, resolved: false });
+        if (qErr) {
+          console.error("Stripe webhook: web_order_review queue failed:", qErr);
+        }
+      } else {
+        console.log(
+          `Stripe webhook: attribution ${attrResult.outcome} → lead ${attrResult.leadId}`
+        );
+      }
     } catch (attrErr) {
       console.error("Stripe webhook: CRM attribution error:", attrErr);
     }
@@ -402,127 +433,5 @@ export async function POST(request: Request) {
 }
 
 
-// ============================================================
-// CRM attribution (Phase 15K)
-// Three branches: discount-code-tied company, contact email match,
-// or queue for manual review.
-// ============================================================
-async function attributeOrderToCrm(args: {
-  orderId: string;
-  customerEmail: string;
-  customerName: string;
-  discountCompanyId: string | null;
-  appliedDiscountCode: string | null;
-  q6: number;
-  q11: number;
-  totalCents: number;
-}) {
-  const supabase = getSupabaseAdmin();
-
-  const orderSummary =
-    `Web order: ${args.q6}× 6", ${args.q11}× 11" — ${formatUSD(args.totalCents)}` +
-    (args.appliedDiscountCode ? ` (code ${args.appliedDiscountCode})` : "");
-
-  // ── Branch 1: discount code tied to a company ──
-  if (args.discountCompanyId) {
-    const { data: lead } = await supabase
-      .from("leads")
-      .select("id")
-      .eq("company_id", args.discountCompanyId)
-      .order("last_activity_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (lead?.id) {
-      await logWebOrderActivity(
-        supabase,
-        lead.id,
-        orderSummary,
-        "matched_by_promo"
-      );
-      return;
-    }
-    // No lead under that company — fall through to review queue.
-    console.warn(
-      `CRM attribution: discount ${args.appliedDiscountCode} ties to company ` +
-        `${args.discountCompanyId} but it has no leads; queuing for review.`
-    );
-    await queueForReview(supabase, args.orderId);
-    return;
-  }
-
-  // ── Branch 2: customer email matches a known contact ──
-  const { data: contact } = await supabase
-    .from("contacts")
-    .select("id, company_id")
-    .ilike("email", args.customerEmail)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (contact?.id) {
-    const { data: lead } = await supabase
-      .from("leads")
-      .select("id")
-      .eq("contact_id", contact.id)
-      .order("last_activity_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (lead?.id) {
-      await logWebOrderActivity(
-        supabase,
-        lead.id,
-        orderSummary,
-        "matched_by_email"
-      );
-      return;
-    }
-    // Contact exists but no lead — queue for manual review so admin
-    // decides whether to start a new lead or link to an existing one.
-    await queueForReview(supabase, args.orderId);
-    return;
-  }
-
-  // ── Branch 3: no match — manual review ──
-  await queueForReview(supabase, args.orderId);
-}
-
-async function logWebOrderActivity(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  leadId: string,
-  summary: string,
-  outcome: "matched_by_promo" | "matched_by_email"
-) {
-  const { error: actErr } = await supabase.from("activities").insert({
-    lead_id: leadId,
-    type: "web_order",
-    summary,
-    outcome,
-  });
-  if (actErr) {
-    console.error("CRM attribution: failed to insert activity:", actErr);
-    return;
-  }
-  // Bump the lead's last_activity_at so it shows up at the top of pipeline views.
-  const { error: leadErr } = await supabase
-    .from("leads")
-    .update({ last_activity_at: new Date().toISOString() })
-    .eq("id", leadId);
-  if (leadErr) {
-    console.error("CRM attribution: failed to bump lead.last_activity_at:", leadErr);
-  }
-}
-
-async function queueForReview(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  orderId: string
-) {
-  const { error } = await supabase.from("web_order_review").insert({
-    order_id: orderId,
-    resolved: false,
-  });
-  if (error) {
-    console.error("CRM attribution: failed to queue web_order_review:", error);
-  }
-}
+// CRM attribution lives in lib/portal/crm-attribution.ts and is shared
+// with the public sample-request handler.

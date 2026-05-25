@@ -248,7 +248,7 @@ export default async function PortalDashboard() {
       icon: Users,
       alert: false,
       href:
-        "/portal/leads?status_in=new,invited,contacted,engaged,sample_sent,quoted,nurture",
+        "/portal/leads?status_in=new,invited,contacted,engaged,sample_sent,quoted,pending_ship,nurture",
       tipSource: "leads",
       tipBody:
         "Count of leads where status NOT IN ('won','lost') AND (wake_up_at IS NULL OR wake_up_at ≤ now()).",

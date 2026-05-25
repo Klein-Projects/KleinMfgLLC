@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { attributeInboundToCrm } from "@/lib/portal/crm-attribution";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const STATE_RE = /^[A-Z]{2}$/;
@@ -167,6 +168,35 @@ export async function POST(request: Request) {
         `orders insert failed for sample_request ${sampleRow.id} — manual fulfillment required:`,
         ordErr
       );
+    }
+
+    // ── 2b. Auto-attribute sample request to CRM (lead + contact + company) ──
+    //    Best-effort: failure must not block the customer-facing 200 response.
+    try {
+      const sampleSummary =
+        `Sample request: ${p.quantity_6inch}× 6", ${p.quantity_11inch}× 11"` +
+        (p.notes ? ` — note: ${p.notes.slice(0, 80)}` : "");
+      const attrResult = await attributeInboundToCrm({
+        supabase,
+        customerEmail: p.email,
+        customerName: p.name,
+        customerPhone: p.phone,
+        companyName: p.company,
+        source: { kind: "sample_request", sampleRequestId: sampleRow.id },
+        activitySummary: sampleSummary,
+      });
+      if (!attrResult.ok) {
+        console.error(
+          `[sample-request] CRM attribution failed for sample_request ${sampleRow.id}:`,
+          attrResult
+        );
+      } else {
+        console.log(
+          `[sample-request] CRM attribution ${attrResult.outcome} → lead ${attrResult.leadId}`
+        );
+      }
+    } catch (attrErr) {
+      console.error("[sample-request] CRM attribution exception:", attrErr);
     }
 
     // ── 3. Notify sales@ ──
