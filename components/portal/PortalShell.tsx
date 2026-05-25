@@ -88,7 +88,20 @@ export default function PortalShell({
         {/* Nav */}
         <nav className="flex-1 px-3 py-4">
           <ul className="space-y-1">
-            {navItems.map((item) => {
+            {navItems
+              .filter((item) => {
+                // The "Web orders" item (the unmatched-order triage queue) is
+                // a safety net only — the Stripe webhook auto-creates a lead
+                // for every paid order via crm-attribution.ts, so this queue
+                // is empty in normal operation. Hide it from the sidebar when
+                // empty so it only reappears if an edge case (no email, DB
+                // failure) ever lands a row here.
+                if (item.key === "review" && (reviewCount ?? 0) === 0) {
+                  return false;
+                }
+                return true;
+              })
+              .map((item) => {
               const active = isActive(item.href);
               const badgeCount =
                 item.key === "review"
