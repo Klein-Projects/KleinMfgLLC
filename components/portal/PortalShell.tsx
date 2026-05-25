@@ -35,12 +35,14 @@ export default function PortalShell({
   reviewCount = 0,
   reviewQueueCount = 0,
   todayCount = 0,
+  shipmentsCount = 0,
   children,
 }: {
   userEmail: string;
   reviewCount?: number;
   reviewQueueCount?: number;
   todayCount?: number;
+  shipmentsCount?: number;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -95,7 +97,9 @@ export default function PortalShell({
                     ? reviewQueueCount
                     : item.key === "today"
                       ? todayCount
-                      : 0;
+                      : item.key === "shipments"
+                        ? shipmentsCount
+                        : 0;
               const showBadge = badgeCount > 0;
               return (
                 <li key={item.href}>

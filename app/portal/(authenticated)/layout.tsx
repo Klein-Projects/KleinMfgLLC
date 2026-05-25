@@ -18,18 +18,26 @@ export default async function PortalLayout({
     redirect("/portal/login");
   }
 
-  const [{ count: reviewCount }, { count: reviewQueueCount }, todayCount] =
-    await Promise.all([
-      supabase
-        .from("web_order_review")
-        .select("id", { count: "exact", head: true })
-        .eq("resolved", false),
-      supabase
-        .from("review_queue")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "pending"),
-      fetchTodayCount(supabase),
-    ]);
+  const [
+    { count: reviewCount },
+    { count: reviewQueueCount },
+    todayCount,
+    { count: shipmentsCount },
+  ] = await Promise.all([
+    supabase
+      .from("web_order_review")
+      .select("id", { count: "exact", head: true })
+      .eq("resolved", false),
+    supabase
+      .from("review_queue")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending"),
+    fetchTodayCount(supabase),
+    supabase
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .in("shipping_status", ["pending", "label_purchased"]),
+  ]);
 
   return (
     <PortalShell
@@ -37,6 +45,7 @@ export default async function PortalLayout({
       reviewCount={reviewCount ?? 0}
       reviewQueueCount={reviewQueueCount ?? 0}
       todayCount={todayCount}
+      shipmentsCount={shipmentsCount ?? 0}
     >
       {children}
       <QuickLogSlideOver />
