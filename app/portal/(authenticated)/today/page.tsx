@@ -28,10 +28,9 @@ export default async function TodayPage({
     ? searchParams.filter
     : "all";
   const activeDef = TODAY_CHIPS.find((c) => c.key === activeChip)!;
-  const visibleCards =
-    activeDef.states === null
-      ? cards
-      : cards.filter((c) => activeDef.states!.includes(c.conversation_state));
+  const visibleCards = cards.filter((c) =>
+    activeDef.states.includes(c.conversation_state),
+  );
 
   const date = new Date(todayISO + "T00:00:00");
   const headerDate = date.toLocaleDateString("en-US", {
@@ -48,9 +47,11 @@ export default async function TodayPage({
         <h1 className="text-2xl font-bold text-navy">Today</h1>
         <p className="mt-1 text-sm text-steel">
           {headerDate} —{" "}
-          {cards.length === 0
-            ? "no conversations need a reply"
-            : `${cards.length} lead${cards.length === 1 ? "" : "s"} to work`}
+          {counts.all === 0
+            ? "no leads need a response right now"
+            : counts.all === 1
+              ? "1 lead needs a response"
+              : `${counts.all} leads need a response`}
         </p>
       </header>
 

@@ -66,9 +66,30 @@ export const STATE_BADGE_CLASS: Record<ConversationState, string> = {
 
 // ── Filter chips (requirement 3) ───────────────────────────────────────
 //
-// Five chips above the list. Each non-"all" chip groups one or more of the
-// 8 states so the chips partition the whole queue (every state lands in
-// exactly one chip) and the chip counts sum to the All count.
+// Five chips above the list. The default "All" view is the leads that need
+// a response from Sean — every classified non-terminal state EXCEPT the
+// ones where the ball is in the lead's court (awaiting_reply,
+// samples_in_transit). Those still exist and surface under the
+// "Awaiting Reply" chip; they just don't dominate the default page.
+//
+// So the chips are NOT a clean partition anymore: "All" and "Awaiting
+// Reply" together cover all 8 states, and Replied/Objection/Long Cold are
+// subsets of "All". Each chip's count is computed independently over its
+// own state set (a card counts toward every chip whose set contains it),
+// so the per-chip counts stay full and honest regardless of the default.
+
+// States hidden from the default "All" view — the lead owes the next move,
+// not Sean. Reachable via the "Awaiting Reply" chip.
+const DEFAULT_HIDDEN_STATES: ConversationState[] = [
+  "awaiting_reply",
+  "samples_in_transit",
+];
+
+// The default "All" view = needs-a-response-from-me.
+const ATTENTION_STATES: ConversationState[] = CONVERSATION_STATES.filter(
+  (s) => !DEFAULT_HIDDEN_STATES.includes(s),
+);
+
 export type ChipKey =
   | "all"
   | "awaiting_reply"
@@ -79,15 +100,15 @@ export type ChipKey =
 export interface ChipDef {
   key: ChipKey;
   label: string;
-  states: ConversationState[] | null; // null = "all"
+  states: ConversationState[];
 }
 
 export const TODAY_CHIPS: ChipDef[] = [
-  { key: "all", label: "All", states: null },
+  { key: "all", label: "All", states: ATTENTION_STATES },
   {
     key: "awaiting_reply",
     label: "Awaiting Reply",
-    states: ["awaiting_reply", "samples_in_transit"],
+    states: DEFAULT_HIDDEN_STATES,
   },
   {
     key: "replied",
@@ -104,13 +125,6 @@ export const TODAY_CHIPS: ChipDef[] = [
 
 export function isChipKey(value: string | undefined): value is ChipKey {
   return !!value && TODAY_CHIPS.some((c) => c.key === value);
-}
-
-export function chipForState(state: ConversationState): ChipKey {
-  for (const chip of TODAY_CHIPS) {
-    if (chip.states && chip.states.includes(state)) return chip.key;
-  }
-  return "all";
 }
 
 // Default sort priority. Leads that are waiting on Sean (a question, a warm
@@ -379,26 +393,34 @@ export async function fetchTodayLeads(
   return { cards, needsNewPrompt, counts };
 }
 
+// Independent per-chip counts: a card counts toward EVERY chip whose state
+// set contains its state. "All" therefore reflects the default
+// needs-a-response view (ATTENTION_STATES), while "Awaiting Reply" still
+// shows its full pile even though those leads are hidden from the default.
 function countByChip(cards: TodayLeadCard[]): Record<ChipKey, number> {
   const counts: Record<ChipKey, number> = {
-    all: cards.length,
+    all: 0,
     awaiting_reply: 0,
     replied: 0,
     objection: 0,
     long_cold: 0,
   };
   for (const card of cards) {
-    const key = chipForState(card.conversation_state);
-    if (key !== "all") counts[key] += 1;
+    for (const chip of TODAY_CHIPS) {
+      if (chip.states.includes(card.conversation_state)) {
+        counts[chip.key] += 1;
+      }
+    }
   }
   return counts;
 }
 
-// Nav-badge count. Mirrors the page's main queue so the "Today" badge and
-// the page agree. NEEDS_NEW_PROMPT (banner-only) leads are excluded.
+// Nav-badge count. Matches the page's default "All" view — the leads that
+// actually need Sean's response — not the full classified queue.
+// NEEDS_NEW_PROMPT (banner-only) leads are excluded.
 export async function fetchTodayLeadCount(
   supabase: SupabaseClient,
 ): Promise<number> {
-  const { cards } = await fetchTodayLeads(supabase);
-  return cards.length;
+  const { counts } = await fetchTodayLeads(supabase);
+  return counts.all;
 }
