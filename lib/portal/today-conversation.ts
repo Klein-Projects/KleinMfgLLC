@@ -72,14 +72,16 @@ export const STATE_BADGE_CLASS: Record<ConversationState, string> = {
 // samples_in_transit). Those still exist and surface under the
 // "Awaiting Reply" chip; they just don't dominate the default page.
 //
-// So the chips are NOT a clean partition anymore: "All" and "Awaiting
-// Reply" together cover all 8 states, and Replied/Objection/Long Cold are
-// subsets of "All". Each chip's count is computed independently over its
-// own state set (a card counts toward every chip whose set contains it),
-// so the per-chip counts stay full and honest regardless of the default.
+// So the chips are NOT a clean partition with "All": "All" excludes the
+// hidden states, while the Awaiting Reply + Samples in Transit chips
+// surface them. Each chip's count is computed independently over its own
+// state set (a card counts toward every chip whose set contains it), so
+// the per-chip counts stay full and honest regardless of the default.
+// The five non-"all" chips DO partition all 8 states one-to-one.
 
 // States hidden from the default "All" view — the lead owes the next move,
-// not Sean. Reachable via the "Awaiting Reply" chip.
+// not Sean. Each is still reachable via its own chip (Awaiting Reply /
+// Samples in Transit) so nothing is silently hidden everywhere.
 const DEFAULT_HIDDEN_STATES: ConversationState[] = [
   "awaiting_reply",
   "samples_in_transit",
@@ -93,6 +95,7 @@ const ATTENTION_STATES: ConversationState[] = CONVERSATION_STATES.filter(
 export type ChipKey =
   | "all"
   | "awaiting_reply"
+  | "samples_in_transit"
   | "replied"
   | "objection"
   | "long_cold";
@@ -108,7 +111,12 @@ export const TODAY_CHIPS: ChipDef[] = [
   {
     key: "awaiting_reply",
     label: "Awaiting Reply",
-    states: DEFAULT_HIDDEN_STATES,
+    states: ["awaiting_reply"],
+  },
+  {
+    key: "samples_in_transit",
+    label: "Samples in Transit",
+    states: ["samples_in_transit"],
   },
   {
     key: "replied",
@@ -401,6 +409,7 @@ function countByChip(cards: TodayLeadCard[]): Record<ChipKey, number> {
   const counts: Record<ChipKey, number> = {
     all: 0,
     awaiting_reply: 0,
+    samples_in_transit: 0,
     replied: 0,
     objection: 0,
     long_cold: 0,
