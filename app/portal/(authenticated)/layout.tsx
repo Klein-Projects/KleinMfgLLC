@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import PortalShell from "@/components/portal/PortalShell";
 import QuickLogSlideOver from "@/components/portal/QuickLogSlideOver";
-import { fetchTodayCount } from "@/lib/portal/today-queue";
+import { fetchTodayLeadCount } from "@/lib/portal/today-conversation";
 
 export default async function PortalLayout({
   children,
@@ -32,7 +32,7 @@ export default async function PortalLayout({
       .from("review_queue")
       .select("id", { count: "exact", head: true })
       .eq("status", "pending"),
-    fetchTodayCount(supabase),
+    fetchTodayLeadCount(supabase),
     supabase
       .from("orders")
       .select("id", { count: "exact", head: true })
