@@ -40,7 +40,7 @@ function buildSystemPrompt(titles: string[]): string {
 
 Your job: read the lead's recent activity log and output exactly one conversation state, a suggested prompt template title, a confidence score, and a one-sentence reason.
 
-The single most important signal is the DIRECTION of the MOST RECENT activity in the thread. Determine that first, then choose the state.
+RULE 1 (overrides everything else): If the direction of the MOST RECENT activity is OUTBOUND from Sean, the state is awaiting_reply — UNLESS shipment status forces samples_in_transit or samples_received. Do not classify as asked_question under any circumstance when the most recent activity is outbound. Determine the most recent activity's direction FIRST, then choose the state. This is a mechanical rule, not a judgment call: an outbound message that contains a question from Sean (for an address, a meeting time, clarification, anything) is still awaiting_reply.
 
 Conversation states (pick exactly one):
   awaiting_reply
@@ -72,10 +72,28 @@ Conversation states (pick exactly one):
     direct question (request for info, clarification, pricing, samples,
     etc.) that Sean has NOT yet answered. If the most recent activity is
     OUTBOUND from Sean, classify as awaiting_reply regardless of whether
-    the prior inbound contained a question.
+    the prior inbound contained a question. The question must come FROM
+    the prospect, not from Sean. Questions Sean asks the prospect (e.g.
+    for a shipping address, for a meeting time, for clarification) do not
+    count — those are part of an outbound message and the resulting state
+    is awaiting_reply.
   long_cold
     Was previously engaged but has been silent 90+ days, with no recent
     inbound or outbound to act on.
+
+Worked example (correctly classified as awaiting_reply, NOT asked_question):
+  Activity 1 (outbound, Apr 23): Sean's connection-intro message
+  Activity 2 (inbound, May 4): "Good day, I might be interested,
+    could you please send some information? Thanks"
+  Activity 3 (outbound, May 4): Sean replied with product info and
+    asked for the prospect's shipping address
+  Correct state: awaiting_reply
+  Correct reason: "Sean's May 4 outbound is the most recent activity;
+    no inbound has been received since."
+  Incorrect (do not do this): classifying as asked_question because
+    Sean's outbound contains a question to the prospect. Sean's
+    questions to the prospect never produce asked_question — they
+    produce awaiting_reply.
 
 Available prompt template titles (use the EXACT title shown, or ${NEEDS_NEW_PROMPT}):
 ${titleBlock}
