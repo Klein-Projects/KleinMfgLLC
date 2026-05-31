@@ -10,6 +10,7 @@ import {
 } from "@/lib/portal/today-conversation";
 import { createClient } from "@/lib/supabase/server";
 import CoworkActivityPanel from "@/components/portal/CoworkActivityPanel";
+import RecentlyAppliedPanel from "@/components/portal/RecentlyAppliedPanel";
 import TodayLeadCards from "./TodayLeadCards";
 
 export const dynamic = "force-dynamic";
@@ -56,6 +57,7 @@ export default async function TodayPage({
       </header>
 
       <CoworkActivityPanel />
+      <RecentlyAppliedPanel />
 
       <div className="max-w-3xl">
         {needsNewPrompt.length > 0 && (
