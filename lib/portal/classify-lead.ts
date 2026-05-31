@@ -40,15 +40,42 @@ function buildSystemPrompt(titles: string[]): string {
 
 Your job: read the lead's recent activity log and output exactly one conversation state, a suggested prompt template title, a confidence score, and a one-sentence reason.
 
+The single most important signal is the DIRECTION of the MOST RECENT activity in the thread. Determine that first, then choose the state.
+
 Conversation states (pick exactly one):
-  awaiting_reply               — most recent message was outbound; no inbound reply.
-  replied_affirmative          — they replied with positive interest.
-  replied_objection            — they replied with a specific obstacle.
-  replied_not_interested       — clear no, conversation should close.
-  samples_in_transit           — samples shipped, not yet delivered.
-  samples_received             — delivery confirmed, awaiting feedback.
-  asked_question               — they asked a specific question that needs reply.
-  long_cold                    — was previously engaged, 90+ days silent.
+  awaiting_reply
+    The most recent activity in this thread is OUTBOUND from Sean, and
+    no inbound activity has been received since. This state takes
+    precedence over asked_question whenever Sean's outbound is the
+    most recent message — the assumption is Sean's outbound either
+    answered the prospect's last question or moved the ball forward,
+    and we are now waiting on them.
+  replied_affirmative
+    The most recent activity is INBOUND and expresses positive interest
+    (e.g. "yes, send samples", or shares a shipping address).
+  replied_objection
+    The most recent activity is INBOUND and raises a specific obstacle
+    (already have a vendor, price, not the buyer for tools, etc.) — the
+    door is not fully closed.
+  replied_not_interested
+    The most recent activity is INBOUND and is a clear no; the
+    conversation should close. Be conservative — a polite "not right
+    now" is replied_objection, not this.
+  samples_in_transit
+    Samples have shipped but delivery is not yet confirmed. Keyed off
+    the shipment status, not message direction.
+  samples_received
+    Delivery is confirmed and Sean is awaiting feedback; there is no
+    unanswered inbound question sitting on top.
+  asked_question
+    The most recent activity is INBOUND, and that inbound contains a
+    direct question (request for info, clarification, pricing, samples,
+    etc.) that Sean has NOT yet answered. If the most recent activity is
+    OUTBOUND from Sean, classify as awaiting_reply regardless of whether
+    the prior inbound contained a question.
+  long_cold
+    Was previously engaged but has been silent 90+ days, with no recent
+    inbound or outbound to act on.
 
 Available prompt template titles (use the EXACT title shown, or ${NEEDS_NEW_PROMPT}):
 ${titleBlock}
@@ -97,6 +124,7 @@ interface ActivityRow {
 interface PromptRow {
   id: string;
   title: string;
+  default_for_state: string | null;
 }
 
 interface ClassifierJson {
@@ -161,7 +189,7 @@ export async function classifyLead(
   // default_for_state mapping; this endpoint stays the same.
   const { data: promptsData, error: promptsErr } = await supabase
     .from("prompt_templates")
-    .select("id, title")
+    .select("id, title, default_for_state")
     .order("title", { ascending: true });
   if (promptsErr) throw new ClassifyError(promptsErr.message, 500);
   const prompts = (promptsData ?? []) as PromptRow[];
@@ -207,21 +235,38 @@ export async function classifyLead(
   const reasoning = (parsed.reason ?? "").toString().slice(0, 500);
   const suggestedTitle = (parsed.suggested_prompt ?? "").toString();
 
-  // Resolve the title to a prompt_templates.id. NEEDS_NEW_PROMPT and any
-  // unrecognized title both yield NULL. Phase 3 distinguishes the
-  // unrecognized case via state_updated_at IS NOT NULL.
+  // Resolve the suggested prompt to a prompt_templates.id, in order
+  // (Phase 4 Step 2):
+  //   1. exact title match on what the classifier returned
+  //   2. the state-level default — the template whose default_for_state
+  //      equals this lead's conversation_state. Covers both the
+  //      NEEDS_NEW_PROMPT sentinel and any unrecognized/hallucinated or
+  //      since-deleted title.
+  //   3. neither resolves → NULL → NEEDS_NEW_PROMPT banner (distinguished
+  //      from never-classified via state_updated_at IS NOT NULL).
+  // The classifier's STATE output stays source-of-truth; the fallback
+  // only fills the prompt.
   let suggestedPromptId: string | null = null;
+  let resolvedTitle: string = NEEDS_NEW_PROMPT;
   let matchedPrompt = false;
+
   if (suggestedTitle && suggestedTitle !== NEEDS_NEW_PROMPT) {
-    const match = prompts.find((p) => p.title === suggestedTitle);
-    if (match) {
-      suggestedPromptId = match.id;
+    const byTitle = prompts.find((p) => p.title === suggestedTitle);
+    if (byTitle) {
+      suggestedPromptId = byTitle.id;
+      resolvedTitle = byTitle.title;
       matchedPrompt = true;
     }
-    // If we didn't find a match, the classifier hallucinated a title
-    // (or one was deleted between fetch and call) — treat as
-    // NEEDS_NEW_PROMPT so the row goes into the banner instead of
-    // pointing at a deleted/wrong template.
+  }
+  if (!suggestedPromptId) {
+    const byState = prompts.find(
+      (p) => p.default_for_state === conversationState,
+    );
+    if (byState) {
+      suggestedPromptId = byState.id;
+      resolvedTitle = byState.title;
+      matchedPrompt = true;
+    }
   }
 
   const stateUpdatedAt = new Date().toISOString();
@@ -244,7 +289,7 @@ export async function classifyLead(
     lead_id: leadId,
     conversation_state: conversationState,
     suggested_prompt_id: suggestedPromptId,
-    suggested_prompt_title: matchedPrompt ? suggestedTitle : NEEDS_NEW_PROMPT,
+    suggested_prompt_title: resolvedTitle,
     state_confidence: confidence,
     state_reasoning: reasoning,
     state_updated_at: stateUpdatedAt,

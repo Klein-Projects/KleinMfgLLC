@@ -22,6 +22,7 @@ interface Template {
   body: string;
   tags: string[] | null;
   use_count: number;
+  default_for_state: string | null;
 }
 
 const CATEGORIES: { value: Category | "all"; label: string }[] = [
@@ -232,6 +233,14 @@ export default function PromptLibraryPage() {
                     >
                       {categoryLabels[template.category] ?? template.category}
                     </span>
+                    {template.default_for_state && (
+                      <span
+                        className="inline-block rounded bg-navy/10 px-2 py-0.5 text-[11px] font-semibold text-navy"
+                        title={`Default prompt for the "${template.default_for_state}" conversation state`}
+                      >
+                        Default · {template.default_for_state}
+                      </span>
+                    )}
                     {stats?.badges.show_reply_rate && stats.reply_rate !== null && (
                       <span
                         className="inline-block rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800"
