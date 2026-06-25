@@ -4,13 +4,13 @@ name: Supabase Keep-Alive
 # after 7 days of inactivity. Runs a tiny read query against the database every
 # 3 days, which registers as activity and resets the inactivity clock.
 #
-# This does NOT change any data — it only reads a single row.
+# This does NOT change any data — it only reads from one table.
 #
-# Requires two repository secrets (Settings -> Secrets and variables -> Actions):
-#   SUPABASE_URL       = https://kajddojfkbewcwiigbwb.supabase.co
-#   SUPABASE_ANON_KEY  = the project's anon/public key (from .env.local
-#                        NEXT_PUBLIC_SUPABASE_ANON_KEY, or Supabase dashboard
-#                        -> Project Settings -> API)
+# The project URL is public (it ships in every browser as NEXT_PUBLIC_SUPABASE_URL),
+# so it is hardcoded below. The only secret required is:
+#   SUPABASE_ANON_KEY = the project's anon/public key (from .env.local
+#                       NEXT_PUBLIC_SUPABASE_ANON_KEY, or Supabase dashboard
+#                       -> Project Settings -> API)
 
 on:
   schedule:
@@ -24,12 +24,16 @@ jobs:
     steps:
       - name: Read one row to register database activity
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          curl --fail --silent --show-error \
-            "${SUPABASE_URL}/rest/v1/site_settings?select=*&limit=1" \
+          HTTP=$(curl --silent --output /dev/null --write-out "%{http_code}" \
+            "https://kajddojfkbewcwiigbwb.supabase.co/rest/v1/site_settings?select=*&limit=1" \
             -H "apikey: ${SUPABASE_ANON_KEY}" \
-            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}"
-          echo ""
-          echo "Keep-alive ping completed."
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}")
+          echo "Supabase responded with HTTP status: $HTTP"
+          if [ "$HTTP" = "200" ]; then
+            echo "Keep-alive ping succeeded — database activity registered."
+          else
+            echo "Keep-alive ping FAILED (expected 200). Check the SUPABASE_ANON_KEY secret."
+            exit 1
+          fi
