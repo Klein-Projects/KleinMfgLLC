@@ -14,9 +14,13 @@ import {
 // Resend to DIGEST_TO_EMAIL.
 //
 // Vercel Cron schedules in UTC, so we register two daily UTC slots and
-// gate inside the route on America/Los_Angeles local time. The off-slot
-// returns 200 with { sent: false, reason: "off-window" } so the cron
-// run is recorded as healthy in the Vercel dashboard either way.
+// gate inside the route on America/Los_Angeles local time: the digest
+// sends on the first firing that lands in the Pacific afternoon. Any
+// firing outside that window returns 200 with { sent: false,
+// reason: "off-window" } so the cron run still shows healthy in Vercel,
+// and a second same-day firing is a harmless no-op (see idempotency).
+// The window is intentionally wide because Vercel's free Hobby-plan
+// crons can drift well past their scheduled minute.
 //
 // Idempotency: pacific_date is the primary key on digest_runs. The
 // route INSERTs that row before calling Resend. A second invocation
@@ -37,9 +41,11 @@ export const dynamic = "force-dynamic";
 const FALLBACK_BASE_URL = "https://kleinmfgllc.com";
 const QUEUE_LIMIT = 10;        // top 10 leads, top 5 rendered inline
 const PREVIEW_LIMIT = 5;
-const SEND_LOCAL_HOUR = 15;    // 3:30 PM Pacific
-const SEND_LOCAL_MINUTE = 30;
-const WINDOW_TOLERANCE_MIN = 15; // ±15 min — covers Vercel cron jitter
+// Send on any firing that lands in the Pacific afternoon (noon–6pm).
+// Wide on purpose: Hobby-plan cron drift can be large, and a second
+// in-window firing the same day no-ops via the digest_runs unique key.
+const SEND_WINDOW_START_HOUR = 12; // 12:00 PM Pacific (inclusive)
+const SEND_WINDOW_END_HOUR = 18;   // 6:00 PM Pacific (exclusive)
 
 function safeEqualString(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -68,10 +74,8 @@ function localPacificClock(now: Date): { hour: number; minute: number } {
 }
 
 function inSendWindow(now: Date): boolean {
-  const { hour, minute } = localPacificClock(now);
-  const target = SEND_LOCAL_HOUR * 60 + SEND_LOCAL_MINUTE;
-  const actual = hour * 60 + minute;
-  return Math.abs(actual - target) <= WINDOW_TOLERANCE_MIN;
+  const { hour } = localPacificClock(now);
+  return hour >= SEND_WINDOW_START_HOUR && hour < SEND_WINDOW_END_HOUR;
 }
 
 export async function GET(req: NextRequest) {
@@ -99,8 +103,9 @@ export async function GET(req: NextRequest) {
   const parts = pacificDateParts(now);
 
   // ── Window guard ──────────────────────────────────────────────────
-  // Vercel Cron schedules in UTC; only one of the two daily slots will
-  // be the right one for Sean's local Pacific time on any given day.
+  // Send on the first firing that lands in the Pacific afternoon; both
+  // daily UTC slots fall inside it, so the earlier one sends and the
+  // later one no-ops on the digest_runs unique date key.
   // Skipped on dry-run so Sean can preview from any timezone any time.
   // (Digest sends 7 days a week — no weekday guard.)
   if (!dryRun) {
